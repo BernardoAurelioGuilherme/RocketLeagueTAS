@@ -16,11 +16,13 @@ This is an early project foundation, not a usable TAS yet. It currently contains
   settings interface.
 - A CMake target configured for a Windows x64 MSVC build.
 
-The panel currently controls the shot state model only. Game input capture,
-playback, slow motion, and saving/loading shot files are not implemented yet.
-The next implementation step is to confirm the SDK hook's input parameter
-behavior in a local Rocket Plugin match, then connect one input frame to
-`ShotSession` per game frame.
+The panel controls a shot state model and hooks `Car_TA.SetVehicleInput` for
+the local car. Play replays committed input frames; once the player returns the
+controller to neutral, any new controller input interrupts playback and starts
+recording. When the saved sequence ends, recording continues automatically.
+Slow motion and saving/loading shot files are not implemented yet. The hook
+parameter layout is based on the official BakkesMod Mechanical Plugin example;
+runtime behavior still needs checking in a Rocket Plugin LAN match.
 
 ## Shot editing rules
 

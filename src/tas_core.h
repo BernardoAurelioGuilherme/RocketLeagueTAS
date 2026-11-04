@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -42,6 +43,7 @@ enum class Phase {
 class ShotSession {
 public:
 	void NewShot(ShotMetadata metadata) {
+		std::lock_guard<std::mutex> lock(mutex_);
 		metadata_ = std::move(metadata);
 		frames_.clear();
 		candidate_.clear();
@@ -50,6 +52,7 @@ public:
 	}
 
 	bool Start() {
+		std::lock_guard<std::mutex> lock(mutex_);
 		if (metadata_.name.empty() || phase_ == Phase::Playing || phase_ == Phase::Recording)
 			return false;
 
@@ -60,11 +63,13 @@ public:
 	}
 
 	void Stop() {
+		std::lock_guard<std::mutex> lock(mutex_);
 		if (phase_ == Phase::Playing || phase_ == Phase::Recording)
 			phase_ = Phase::Stopped;
 	}
 
 	bool Update() {
+		std::lock_guard<std::mutex> lock(mutex_);
 		if (phase_ != Phase::Stopped || candidate_.empty())
 			return false;
 
@@ -82,6 +87,7 @@ public:
 	// wins; when `breakPlayback` is true, the player's current frame begins a new
 	// candidate segment. When the committed sequence ends, recording continues.
 	InputFrame ProcessInput(const InputFrame& liveInput, bool breakPlayback = false) {
+		std::lock_guard<std::mutex> lock(mutex_);
 		if (phase_ == Phase::Playing) {
 			if (breakPlayback || cursor_ >= frames_.size()) {
 				phase_ = Phase::Recording;
@@ -99,13 +105,29 @@ public:
 		return liveInput;
 	}
 
-	Phase GetPhase() const { return phase_; }
-	const ShotMetadata& GetMetadata() const { return metadata_; }
-	const std::vector<InputFrame>& GetFrames() const { return frames_; }
-	std::size_t GetCandidateFrameCount() const { return candidate_.size(); }
-	std::size_t GetPlaybackCursor() const { return cursor_; }
+	Phase GetPhase() const {
+		std::lock_guard<std::mutex> lock(mutex_);
+		return phase_;
+	}
+	std::string GetShotName() const {
+		std::lock_guard<std::mutex> lock(mutex_);
+		return metadata_.name;
+	}
+	std::size_t GetSavedFrameCount() const {
+		std::lock_guard<std::mutex> lock(mutex_);
+		return frames_.size();
+	}
+	std::size_t GetCandidateFrameCount() const {
+		std::lock_guard<std::mutex> lock(mutex_);
+		return candidate_.size();
+	}
+	std::size_t GetPlaybackCursor() const {
+		std::lock_guard<std::mutex> lock(mutex_);
+		return cursor_;
+	}
 
 private:
+	mutable std::mutex mutex_;
 	ShotMetadata metadata_;
 	std::vector<InputFrame> frames_;
 	std::vector<InputFrame> candidate_;
