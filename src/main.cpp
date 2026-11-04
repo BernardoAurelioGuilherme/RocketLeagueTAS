@@ -33,6 +33,8 @@ class RocketLeagueTAS final : public BakkesMod::Plugin::BakkesModPlugin,
 public:
 	void onLoad() override {
 		RefreshSavedShots();
+		if (gameWrapper->IsInGame())
+			gameWrapper->Execute([this](GameWrapper*) { ApplySelectedSpeed(); });
 		cvarManager->registerNotifier("rltas_new", [this](std::vector<std::string> args) {
 			if (args.size() < 2) {
 				Log("Usage: rltas_new <shot name>");
@@ -87,7 +89,6 @@ public:
 		if (gameWrapper)
 			gameWrapper->UnhookEvent("Function TAGame.Car_TA.SetVehicleInput");
 		shot_.Stop();
-		RestoreTimeDilation();
 	}
 
 	void RenderSettings() override {
@@ -119,12 +120,16 @@ public:
 		ImGui::Text("Status: %s", phaseLabel);
 		ImGui::Text("Saved input frames: %zu", shot_.GetSavedFrameCount());
 		ImGui::Text("Candidate frames: %zu", shot_.GetCandidateFrameCount());
-		bool slowMotion = slowMotionEnabled_.load();
-		if (ImGui::Checkbox("Slow motion while TAS runs", &slowMotion))
-			slowMotionEnabled_.store(slowMotion);
 		float speed = playbackSpeed_.load();
-		if (ImGui::SliderFloat("Game speed", &speed, 0.10f, 1.0f, "%.2fx"))
+		if (ImGui::SliderFloat("Game speed", &speed, 0.10f, 2.0f, "%.2fx")) {
 			playbackSpeed_.store(speed);
+			speedNeedsApply_.store(true);
+			gameWrapper->Execute([this](GameWrapper*) { ApplySelectedSpeed(); });
+		}
+		ImGui::TextWrapped("Game speed applies continuously while in-game, whether or not a TAS is recording.");
+		bool autoFlipReset = autoFlipResetEnabled_.load();
+		if (ImGui::Checkbox("Automatically restore flip after a flip", &autoFlipReset))
+			autoFlipResetEnabled_.store(autoFlipReset);
 		ImGui::Text("Flip: %s", flipAvailable_.load() ? "Available" : "Used / unavailable");
 		if (ImGui::BeginCombo("Saved TAS", selectedShot_.empty() ? "Choose a saved TAS" : selectedShot_.c_str())) {
 			for (const auto& file : savedShotFiles_) {
@@ -153,11 +158,6 @@ public:
 		if (ImGui::Button("Stop"))
 			gameWrapper->Execute([this](GameWrapper*) { StopAttempt(); });
 		ImGui::SameLine();
-		const auto currentPhase = shot_.GetPhase();
-		const bool canInsertFlip = currentPhase == rltas::Phase::Playing || currentPhase == rltas::Phase::Recording;
-		if (ImGui::Button("Insert Flip Reset") && canInsertFlip)
-			grantFlipRequested_.store(true);
-		ImGui::SameLine();
 		if (ImGui::Button("Update"))
 			gameWrapper->Execute([this](GameWrapper*) { CommitAndSave(); });
 		if (ImGui::Button("Stop and Update")) {
@@ -168,7 +168,7 @@ public:
 		}
 
 		ImGui::Separator();
-		ImGui::TextWrapped("Flip reset actions are inserted at the next controller frame and replay with the shot.");
+		ImGui::TextWrapped("Flip restoration is detected automatically when your dodge finishes.");
 	}
 
 	std::string GetPluginName() override {
@@ -251,36 +251,18 @@ private:
 		if (!shot_.Start())
 			return false;
 		breakArmed_.store(false);
-		BeginSlowMotion();
 		return true;
 	}
 
-	void BeginSlowMotion() {
-		if (!slowMotionEnabled_.load() || !gameWrapper->IsInGame())
-			return;
-		ServerWrapper server = gameWrapper->GetGameEventAsServer();
-		if (server.memory_address == 0)
-			return;
-		WorldInfoWrapper world = server.GetWorldInfo();
-		if (world.memory_address == 0)
-			return;
-		previousTimeDilation_ = world.GetTimeDilation();
-		hasTimeDilationSnapshot_ = true;
-		server.SetTimeDilation(playbackSpeed_.load());
-	}
-
-	void RestoreTimeDilation() {
-		if (!hasTimeDilationSnapshot_ || !gameWrapper || !gameWrapper->IsInGame())
-			return;
-		ServerWrapper server = gameWrapper->GetGameEventAsServer();
-		if (server.memory_address != 0)
-			server.SetTimeDilation(previousTimeDilation_);
-		hasTimeDilationSnapshot_ = false;
+	void ApplySelectedSpeed() {
+		if (gameWrapper && gameWrapper->IsInGame() && cvarManager) {
+			cvarManager->executeCommand("gamespeed " + std::to_string(playbackSpeed_.load()));
+			speedNeedsApply_.store(false);
+		}
 	}
 
 	void StopAttempt() {
 		shot_.Stop();
-		RestoreTimeDilation();
 	}
 
 	static void GrantFlip(CarWrapper& car) {
@@ -449,18 +431,20 @@ private:
 		const CarWrapper localCar = gameWrapper->GetLocalCar();
 		if (localCar.memory_address == 0 || car.memory_address != localCar.memory_address)
 			return;
+		if (speedNeedsApply_.load()) {
+			ApplySelectedSpeed();
+		} else if (++speedCheckCounter_ >= 30) {
+			speedCheckCounter_ = 0;
+			const WorldInfoWrapper world = gameWrapper->GetGameEventAsServer().GetWorldInfo();
+			if (world.memory_address != 0 && std::abs(world.GetTimeDilation() - playbackSpeed_.load()) > 0.01f)
+				ApplySelectedSpeed();
+		}
 
 		auto* controllerInput = static_cast<ControllerInput*>(params);
 		rltas::InputFrame liveInput = FromControllerInput(*controllerInput);
-		const bool manualFlipGrant = grantFlipRequested_.exchange(false);
-		if (manualFlipGrant)
-			liveInput.grantFlip = true;
-		flipAvailable_.store(car.HasFlip() != 0);
 		const bool isPlaying = shot_.GetPhase() == rltas::Phase::Playing;
 		bool breakPlayback = false;
-		if (manualFlipGrant && isPlaying) {
-			breakPlayback = true;
-		} else if (isPlaying && breakOnInput_.load()) {
+		if (isPlaying && breakOnInput_.load()) {
 			if (!breakArmed_.load()) {
 				if (IsNeutralInput(liveInput))
 					breakArmed_.store(true);
@@ -473,6 +457,12 @@ private:
 		if (output.grantFlip)
 			GrantFlip(car);
 		*controllerInput = ToControllerInput(output);
+
+		const bool isDodging = car.IsDodging();
+		if (wasDodging_ && !isDodging && !car.GetbOnGround() && !car.HasFlip() && autoFlipResetEnabled_.load())
+			GrantFlip(car);
+		wasDodging_ = isDodging;
+		flipAvailable_.store(car.HasFlip() != 0);
 	}
 
 	void Log(const std::string& message) {
@@ -489,12 +479,12 @@ private:
 	std::array<char, 128> shotName_{};
 	std::atomic<bool> breakOnInput_{true};
 	std::atomic<bool> breakArmed_{false};
-	std::atomic<bool> slowMotionEnabled_{false};
-	std::atomic<float> playbackSpeed_{0.25f};
-	std::atomic<bool> grantFlipRequested_{false};
+	std::atomic<float> playbackSpeed_{1.0f};
+	std::atomic<bool> speedNeedsApply_{true};
+	std::atomic<bool> autoFlipResetEnabled_{true};
 	std::atomic<bool> flipAvailable_{false};
-	float previousTimeDilation_ = 1.0f;
-	bool hasTimeDilationSnapshot_ = false;
+	bool wasDodging_ = false;
+	unsigned int speedCheckCounter_ = 0;
 };
 
 BAKKESMOD_PLUGIN(RocketLeagueTAS, "Rocket League LAN TAS", "0.1.0", PLUGINTYPE_FREEPLAY)
