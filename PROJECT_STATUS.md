@@ -10,14 +10,18 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 - Update commits the candidate input segment and saves a `.rltas` file.
 - Saved TAS dropdown, Load TAS, and Refresh list controls.
 - TAS files are stored in BakkesMod's data folder at `RocketLeagueTAS/shots`.
-- Slow motion and other future functions are not implemented yet.
+- Optional slow motion during a TAS attempt, with a 0.10x to 1.00x speed control. The previous game time dilation is restored on Stop.
+- HUD flip availability readout using `CarWrapper::HasFlip()`.
+- Insert Flip Reset queues a car-state action at the next input frame. That action is stored in the shot and replays; using it during playback starts a new recorded branch.
+- `.rltas` format version 2 stores flip reset markers and continues to load version 1 files.
+- Other future functions are not implemented yet.
 
 ## Latest build
 
-- Latest source commit: `4723696` (`Fix loading physics state flags`), preceded by `7f5527f` (car start restore and saved TAS selector).
-- Windows GitHub Actions run `41911369585` succeeded.
-- The built DLL was installed to the user's BakkesMod plugins folder in the Heroic Rocket League prefix. Reload the plugin or restart Rocket League to use it.
-- The plugin compiled successfully; the latest car restore and saved-file workflow still need in-game verification in a Rocket Plugin LAN match.
+- Latest source commit: `9960c25` (`Add TAS speed control and recorded flip reset actions`).
+- Windows GitHub Actions run `41913908677` succeeded.
+- The built DLL was installed to the user's BakkesMod plugin folder. Reload the plugin or restart Rocket League to use it.
+- The speed and flip features compile successfully; both still need in-game verification in a Rocket Plugin LAN match. Flip Reset insertion currently changes the local car jump flags (`bDoubleJumped` and `bCanJump`) at the chosen frame.
 
 ## Next test steps
 
@@ -26,7 +30,9 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 3. Record a segment, stop it, then use Stop and Update to commit and save.
 4. Move the car and ball, select the shot from Saved TAS, click Load TAS, then Play / Record.
 5. Check whether the car and ball return to their recorded states and whether playback behaves as expected in the LAN match.
-6. Report any issues before adding slow motion or other features.
+6. Enable Slow motion while TAS runs and try a short attempt at a reduced game speed; check that Stop restores normal speed.
+7. During a recording, press Insert Flip Reset and test whether the next airborne jump input grants the intended flip. Save and replay the shot to verify the marker is reproduced.
+8. Report any issues before adding other features.
 
 ## Repository
 
