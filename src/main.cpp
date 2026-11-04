@@ -82,11 +82,20 @@ public:
 			[this](CarWrapper car, void* params, std::string) {
 				OnVehicleInput(car, params);
 			});
+		gameWrapper->HookEventWithCaller<CarWrapper>(
+			"Function TAGame.Car_TA.OnHitBall",
+			[this](CarWrapper car, void* params, std::string) { OnLocalBallHitPre(car, params); });
+		gameWrapper->HookEventWithCallerPost<CarWrapper>(
+			"Function TAGame.Car_TA.OnHitBall",
+			[this](CarWrapper car, void* params, std::string) { OnLocalBallHitPost(car, params); });
 	}
 
 	void onUnload() override {
-		if (gameWrapper)
+		if (gameWrapper) {
 			gameWrapper->UnhookEvent("Function TAGame.Car_TA.SetVehicleInput");
+			gameWrapper->UnhookEvent("Function TAGame.Car_TA.OnHitBall");
+			RestoreBallSpeedCap();
+		}
 		shot_.Stop();
 	}
 
@@ -124,6 +133,11 @@ public:
 			playbackSpeed_.store(speed);
 			speedNeedsApply_.store(true);
 			gameWrapper->Execute([this](GameWrapper*) { ApplySelectedSpeed(); });
+		}
+		float hitMultiplier = ballHitMultiplier_.load();
+		if (ImGui::SliderFloat("Ball hit speed multiplier", &hitMultiplier, 1.0f, 5.0f, "%.1fx")) {
+			ballHitMultiplier_.store(hitMultiplier);
+			gameWrapper->Execute([this](GameWrapper*) { ApplyBallSpeedCap(); });
 		}
 		ImGui::TextWrapped("Game speed applies continuously while in-game, whether or not a TAS is recording.");
 		ImGui::Text("Server speed: %.2fx", actualGameSpeed_.load());
@@ -237,6 +251,7 @@ private:
 		CarWrapper car = gameWrapper->GetLocalCar();
 		if (ball.memory_address == 0 || car.memory_address == 0)
 			return false;
+		CaptureBallSpeedCap(ball);
 
 		if (!hasStartSnapshot_) {
 			ballSnapshot_ = ball.GetRBState();
@@ -288,6 +303,7 @@ private:
 		}
 		ballSnapshot_ = ball.GetRBState();
 		carSnapshot_ = car.GetRBState();
+		CaptureBallSpeedCap(ball);
 		hasStartSnapshot_ = true;
 		rltas::ShotMetadata metadata;
 		metadata.name = name;
@@ -472,6 +488,85 @@ private:
 		flipAvailable_.store(car.HasFlip() != 0);
 	}
 
+	struct CarHitBallParams {
+		std::uintptr_t ball;
+	};
+
+	BallWrapper GetHitBall(void* params) {
+		if (!params)
+			return BallWrapper();
+		auto* hitParams = static_cast<CarHitBallParams*>(params);
+		return BallWrapper(hitParams->ball);
+	}
+
+	void OnLocalBallHitPre(CarWrapper car, void* params) {
+		const CarWrapper localCar = gameWrapper->GetLocalCar();
+		if (localCar.memory_address == 0 || car.memory_address != localCar.memory_address)
+			return;
+		pendingLocalBallHit_ = false;
+		BallWrapper ball = GetHitBall(params);
+		if (ball.memory_address == 0)
+			return;
+		CaptureBallSpeedCap(ball);
+		pendingHitBallAddress_ = ball.memory_address;
+		ballVelocityBeforeHit_ = ball.GetVelocity();
+		pendingLocalBallHit_ = true;
+	}
+
+	void OnLocalBallHitPost(CarWrapper car, void* params) {
+		if (!pendingLocalBallHit_)
+			return;
+		const CarWrapper localCar = gameWrapper->GetLocalCar();
+		if (localCar.memory_address == 0 || car.memory_address != localCar.memory_address) {
+			pendingLocalBallHit_ = false;
+			return;
+		}
+		BallWrapper ball = GetHitBall(params);
+		if (ball.memory_address == 0 || ball.memory_address != pendingHitBallAddress_) {
+			pendingLocalBallHit_ = false;
+			return;
+		}
+		const float multiplier = ballHitMultiplier_.load();
+		if (multiplier > 1.0f) {
+			const Vector afterHit = ball.GetVelocity();
+			const Vector hitDelta(afterHit.X - ballVelocityBeforeHit_.X,
+				afterHit.Y - ballVelocityBeforeHit_.Y,
+				afterHit.Z - ballVelocityBeforeHit_.Z);
+			const Vector boostedVelocity(ballVelocityBeforeHit_.X + hitDelta.X * multiplier,
+				ballVelocityBeforeHit_.Y + hitDelta.Y * multiplier,
+				ballVelocityBeforeHit_.Z + hitDelta.Z * multiplier);
+			ApplyBallSpeedCap();
+			ball.SetVelocity(boostedVelocity);
+		}
+		pendingLocalBallHit_ = false;
+	}
+
+	void CaptureBallSpeedCap(BallWrapper& ball) {
+		if (ball.memory_address == 0 ||
+			(hasBaseBallMaxSpeed_ && baseBallMaxSpeedBallAddress_ == ball.memory_address))
+			return;
+		baseBallMaxSpeed_ = ball.GetMaxLinearSpeed();
+		baseBallMaxSpeedBallAddress_ = ball.memory_address;
+		hasBaseBallMaxSpeed_ = true;
+	}
+
+	void ApplyBallSpeedCap() {
+		if (!hasBaseBallMaxSpeed_ || !gameWrapper || !gameWrapper->IsInGame())
+			return;
+		BallWrapper ball = gameWrapper->GetGameEventAsServer().GetBall();
+		if (ball.memory_address == baseBallMaxSpeedBallAddress_)
+			ball.SetMaxLinearSpeed(baseBallMaxSpeed_ * ballHitMultiplier_.load());
+	}
+
+	void RestoreBallSpeedCap() {
+		if (!hasBaseBallMaxSpeed_ || !gameWrapper || !gameWrapper->IsInGame())
+			return;
+		BallWrapper ball = gameWrapper->GetGameEventAsServer().GetBall();
+		if (ball.memory_address == baseBallMaxSpeedBallAddress_)
+			ball.SetMaxLinearSpeed(baseBallMaxSpeed_);
+		hasBaseBallMaxSpeed_ = false;
+	}
+
 	void Log(const std::string& message) {
 		if (cvarManager)
 			cvarManager->log("RocketLeagueTAS: " + message);
@@ -488,11 +583,18 @@ private:
 	std::atomic<bool> breakArmed_{false};
 	std::atomic<float> playbackSpeed_{1.0f};
 	std::atomic<float> actualGameSpeed_{1.0f};
+	std::atomic<float> ballHitMultiplier_{1.0f};
 	std::atomic<bool> speedNeedsApply_{true};
 	std::atomic<bool> autoFlipResetEnabled_{true};
 	std::atomic<bool> flipAvailable_{false};
 	bool wasDodging_ = false;
 	unsigned int speedCheckCounter_ = 0;
+	Vector ballVelocityBeforeHit_{};
+	std::uintptr_t pendingHitBallAddress_ = 0;
+	std::uintptr_t baseBallMaxSpeedBallAddress_ = 0;
+	float baseBallMaxSpeed_ = 0.0f;
+	bool pendingLocalBallHit_ = false;
+	bool hasBaseBallMaxSpeed_ = false;
 };
 
 BAKKESMOD_PLUGIN(RocketLeagueTAS, "Rocket League LAN TAS", "0.1.0", PLUGINTYPE_FREEPLAY)
