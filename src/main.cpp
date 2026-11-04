@@ -435,7 +435,7 @@ private:
 			ApplySelectedSpeed();
 		} else if (++speedCheckCounter_ >= 30) {
 			speedCheckCounter_ = 0;
-			const WorldInfoWrapper world = gameWrapper->GetGameEventAsServer().GetWorldInfo();
+		WorldInfoWrapper world = gameWrapper->GetGameEventAsServer().GetWorldInfo();
 			if (world.memory_address != 0 && std::abs(world.GetTimeDilation() - playbackSpeed_.load()) > 0.01f)
 				ApplySelectedSpeed();
 		}
