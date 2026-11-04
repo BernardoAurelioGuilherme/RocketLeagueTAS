@@ -19,10 +19,10 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 
 ## Latest build
 
-- Latest source commit: `7ef5191` (`Snap ball multiplier to tenths`).
-- Windows GitHub Actions run `41925761529` succeeded.
+- Latest source commit: `7455851` (`Apply hit multiplier after ball physics settles`).
+- Windows GitHub Actions run `41927884857` succeeded.
 - The latest DLL is installed in the user's BakkesMod plugin folder; reload the plugin or restart Rocket League to use it.
-- The ball multiplier is built and installed; it still needs in-game verification.
+- Ball hit velocity scaling is applied 0.01 seconds after the hit callback so the normal collision physics can settle first. The ball multiplier is built and installed; retest to confirm the ball no longer feels heavy.
 
 ## Next test steps
 
