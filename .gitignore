@@ -1,0 +1,7 @@
+build/
+build-*/
+*.dll
+*.pdb
+*.so
+/include/bakkesmod/bakkesmod-patch.exe
+/include/bakkesmod/imgui_bm.zip

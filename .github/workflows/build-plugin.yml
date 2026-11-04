@@ -1,0 +1,36 @@
+name: Build RocketLeagueTAS
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Configure x64 MSVC build
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build plugin
+        run: cmake --build build --config Release --parallel
+
+      - name: Confirm DLL was produced
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "build/Release/RocketLeagueTAS.dll")) {
+            throw "Build did not produce RocketLeagueTAS.dll"
+          }
+
+      - name: Upload plugin DLL
+        uses: actions/upload-artifact@v7
+        with:
+          name: RocketLeagueTAS-windows-x64
+          path: build/Release/RocketLeagueTAS.dll
+          if-no-files-found: error
+          retention-days: 14
