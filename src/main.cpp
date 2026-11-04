@@ -11,6 +11,7 @@
 #include "bakkesmod/plugin/bakkesmodplugin.h"
 #include "bakkesmod/plugin/PluginSettingsWindow.h"
 #include "bakkesmod/wrappers/GameObject/CarWrapper.h"
+#include "bakkesmod/wrappers/GameObject/BallWrapper.h"
 #include "tas_core.h"
 #include "imgui.h"
 
@@ -30,20 +31,20 @@ public:
 				Log("Usage: rltas_new <shot name>");
 				return;
 			}
-			rltas::ShotMetadata metadata;
-			metadata.name = args[1];
-			shot_.NewShot(std::move(metadata));
-			Log("New shot created: " + args[1]);
+			const std::string name = args[1];
+			gameWrapper->Execute([this, name](GameWrapper*) { CreateShot(name); });
 		}, "Create a new LAN TAS shot", PERMISSION_ALL);
 
 		cvarManager->registerNotifier("rltas_start", [this](std::vector<std::string>) {
-			if (!StartAttempt()) {
-				Log("Cannot start: create a shot first or stop the active attempt.");
-				return;
-			}
-			Log(shot_.GetPhase() == rltas::Phase::Playing
-				? "Replaying the saved shot; a playback break will begin recording."
-				: "Recording the first shot segment.");
+			gameWrapper->Execute([this](GameWrapper*) {
+				if (!StartAttempt()) {
+					Log("Cannot start: create a shot in a LAN match first, or stop the active attempt.");
+					return;
+				}
+				Log(shot_.GetPhase() == rltas::Phase::Playing
+					? "Ball restored. Replaying the saved shot; a playback break will begin recording."
+					: "Recording the first shot segment.");
+			});
 		}, "Replay shot and begin an editable recording segment", PERMISSION_ALL);
 
 		cvarManager->registerNotifier("rltas_stop", [this](std::vector<std::string>) {
@@ -85,10 +86,8 @@ public:
 		ImGui::InputText("Shot name", shotName_.data(), shotName_.size());
 		if (ImGui::Button("New Shot")) {
 			if (shotName_[0] != '\0') {
-				rltas::ShotMetadata metadata;
-				metadata.name = shotName_.data();
-				shot_.NewShot(std::move(metadata));
-				breakArmed_.store(false);
+				const std::string name = shotName_.data();
+				gameWrapper->Execute([this, name](GameWrapper*) { CreateShot(name); });
 			}
 		}
 		ImGui::SameLine();
@@ -113,7 +112,7 @@ public:
 			breakOnInput_.store(breakOnInput);
 
 		if (ImGui::Button("Play / Record"))
-			StartAttempt();
+			gameWrapper->Execute([this](GameWrapper*) { StartAttempt(); });
 		ImGui::SameLine();
 		if (ImGui::Button("Stop"))
 			shot_.Stop();
@@ -186,10 +185,45 @@ private:
 	}
 
 	bool StartAttempt() {
+		if (!gameWrapper->IsInGame())
+			return false;
+		const auto phase = shot_.GetPhase();
+		if (phase == rltas::Phase::Playing || phase == rltas::Phase::Recording)
+			return false;
+		BallWrapper ball = gameWrapper->GetGameEventAsServer().GetBall();
+		if (ball.memory_address == 0)
+			return false;
+
+		if (!hasBallSnapshot_) {
+			ballSnapshot_ = ball.GetRBState();
+			hasBallSnapshot_ = true;
+		} else {
+			RBState state = ballSnapshot_;
+			ball.SetPhysicsState(state);
+		}
 		if (!shot_.Start())
 			return false;
 		breakArmed_.store(false);
 		return true;
+	}
+
+	void CreateShot(const std::string& name) {
+		if (!gameWrapper->IsInGame()) {
+			Log("Join the LAN match before creating a shot so its ball start state can be captured.");
+			return;
+		}
+		BallWrapper ball = gameWrapper->GetGameEventAsServer().GetBall();
+		if (ball.memory_address == 0) {
+			Log("No ball is available in this match.");
+			return;
+		}
+		ballSnapshot_ = ball.GetRBState();
+		hasBallSnapshot_ = true;
+		rltas::ShotMetadata metadata;
+		metadata.name = name;
+		shot_.NewShot(std::move(metadata));
+		breakArmed_.store(false);
+		Log("New shot created with the current ball state: " + name);
 	}
 
 	void OnVehicleInput(CarWrapper car, void* params) {
@@ -222,6 +256,8 @@ private:
 	}
 
 	rltas::ShotSession shot_;
+	RBState ballSnapshot_{};
+	bool hasBallSnapshot_ = false;
 	std::array<char, 128> shotName_{};
 	std::atomic<bool> breakOnInput_{true};
 	std::atomic<bool> breakArmed_{false};
