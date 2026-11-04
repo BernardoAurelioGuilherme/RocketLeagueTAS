@@ -12,7 +12,6 @@
 #include "bakkesmod/plugin/PluginSettingsWindow.h"
 #include "bakkesmod/wrappers/GameObject/CarWrapper.h"
 #include "bakkesmod/wrappers/GameObject/BallWrapper.h"
-#include "bakkesmod/wrappers/Engine/WorldInfoWrapper.h"
 #include "tas_core.h"
 #include "imgui.h"
 
@@ -127,6 +126,7 @@ public:
 			gameWrapper->Execute([this](GameWrapper*) { ApplySelectedSpeed(); });
 		}
 		ImGui::TextWrapped("Game speed applies continuously while in-game, whether or not a TAS is recording.");
+		ImGui::Text("Server speed: %.2fx", actualGameSpeed_.load());
 		bool autoFlipReset = autoFlipResetEnabled_.load();
 		if (ImGui::Checkbox("Automatically restore flip after a flip", &autoFlipReset))
 			autoFlipResetEnabled_.store(autoFlipReset);
@@ -255,8 +255,12 @@ private:
 	}
 
 	void ApplySelectedSpeed() {
-		if (gameWrapper && gameWrapper->IsInGame() && cvarManager) {
-			cvarManager->executeCommand("gamespeed " + std::to_string(playbackSpeed_.load()));
+		if (gameWrapper && gameWrapper->IsInGame()) {
+			ServerWrapper server = gameWrapper->GetGameEventAsServer();
+			if (server.memory_address == 0)
+				return;
+			server.SetGameSpeed(playbackSpeed_.load());
+			actualGameSpeed_.store(server.GetGameSpeed());
 			speedNeedsApply_.store(false);
 		}
 	}
@@ -435,9 +439,12 @@ private:
 			ApplySelectedSpeed();
 		} else if (++speedCheckCounter_ >= 30) {
 			speedCheckCounter_ = 0;
-		WorldInfoWrapper world = gameWrapper->GetGameEventAsServer().GetWorldInfo();
-			if (world.memory_address != 0 && std::abs(world.GetTimeDilation() - playbackSpeed_.load()) > 0.01f)
-				ApplySelectedSpeed();
+			ServerWrapper server = gameWrapper->GetGameEventAsServer();
+			if (server.memory_address != 0) {
+				actualGameSpeed_.store(server.GetGameSpeed());
+				if (std::abs(server.GetGameSpeed() - playbackSpeed_.load()) > 0.01f)
+					ApplySelectedSpeed();
+			}
 		}
 
 		auto* controllerInput = static_cast<ControllerInput*>(params);
@@ -480,6 +487,7 @@ private:
 	std::atomic<bool> breakOnInput_{true};
 	std::atomic<bool> breakArmed_{false};
 	std::atomic<float> playbackSpeed_{1.0f};
+	std::atomic<float> actualGameSpeed_{1.0f};
 	std::atomic<bool> speedNeedsApply_{true};
 	std::atomic<bool> autoFlipResetEnabled_{true};
 	std::atomic<bool> flipAvailable_{false};
