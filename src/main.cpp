@@ -136,6 +136,7 @@ public:
 		}
 		float hitMultiplier = ballHitMultiplier_.load();
 		if (ImGui::SliderFloat("Ball hit speed multiplier", &hitMultiplier, 1.0f, 5.0f, "%.1fx")) {
+			hitMultiplier = std::round(hitMultiplier * 10.0f) / 10.0f;
 			ballHitMultiplier_.store(hitMultiplier);
 			gameWrapper->Execute([this](GameWrapper*) { ApplyBallSpeedCap(); });
 		}
