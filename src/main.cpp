@@ -494,7 +494,7 @@ private:
 
 	BallWrapper GetHitBall(void* params) {
 		if (!params)
-			return BallWrapper();
+			return BallWrapper(0);
 		auto* hitParams = static_cast<CarHitBallParams*>(params);
 		return BallWrapper(hitParams->ball);
 	}
