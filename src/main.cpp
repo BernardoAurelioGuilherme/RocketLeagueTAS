@@ -138,7 +138,6 @@ public:
 		if (ImGui::SliderFloat("Ball hit speed multiplier", &hitMultiplier, 1.0f, 5.0f, "%.1fx")) {
 			hitMultiplier = std::round(hitMultiplier * 10.0f) / 10.0f;
 			ballHitMultiplier_.store(hitMultiplier);
-			gameWrapper->Execute([this](GameWrapper*) { ApplyBallSpeedCap(); });
 		}
 		ImGui::TextWrapped("Game speed applies continuously while in-game, whether or not a TAS is recording.");
 		ImGui::Text("Server speed: %.2fx", actualGameSpeed_.load());
@@ -529,15 +528,24 @@ private:
 		}
 		const float multiplier = ballHitMultiplier_.load();
 		if (multiplier > 1.0f) {
-			const Vector afterHit = ball.GetVelocity();
-			const Vector hitDelta(afterHit.X - ballVelocityBeforeHit_.X,
-				afterHit.Y - ballVelocityBeforeHit_.Y,
-				afterHit.Z - ballVelocityBeforeHit_.Z);
-			const Vector boostedVelocity(ballVelocityBeforeHit_.X + hitDelta.X * multiplier,
-				ballVelocityBeforeHit_.Y + hitDelta.Y * multiplier,
-				ballVelocityBeforeHit_.Z + hitDelta.Z * multiplier);
-			ApplyBallSpeedCap();
-			ball.SetVelocity(boostedVelocity);
+			const std::uintptr_t ballAddress = ball.memory_address;
+			const Vector velocityBeforeHit = ballVelocityBeforeHit_;
+			gameWrapper->SetTimeout([this, ballAddress, velocityBeforeHit, multiplier](GameWrapper* gw) {
+				if (!gw->IsInGame())
+					return;
+				BallWrapper hitBall(ballAddress);
+				if (hitBall.memory_address != ballAddress)
+					return;
+				const Vector afterHit = hitBall.GetVelocity();
+				const Vector hitDelta(afterHit.X - velocityBeforeHit.X,
+					afterHit.Y - velocityBeforeHit.Y,
+					afterHit.Z - velocityBeforeHit.Z);
+				const Vector boostedVelocity(velocityBeforeHit.X + hitDelta.X * multiplier,
+					velocityBeforeHit.Y + hitDelta.Y * multiplier,
+					velocityBeforeHit.Z + hitDelta.Z * multiplier);
+				ApplyBallSpeedCap();
+				hitBall.SetVelocity(boostedVelocity);
+			}, 0.01f);
 		}
 		pendingLocalBallHit_ = false;
 	}
