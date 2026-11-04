@@ -23,6 +23,7 @@ struct InputFrame {
 	bool boost = false;
 	bool holdingBoost = false;
 	bool jumped = false;
+	bool grantFlip = false;
 };
 
 struct ShotMetadata {

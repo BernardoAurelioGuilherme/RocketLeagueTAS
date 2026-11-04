@@ -12,6 +12,7 @@
 #include "bakkesmod/plugin/PluginSettingsWindow.h"
 #include "bakkesmod/wrappers/GameObject/CarWrapper.h"
 #include "bakkesmod/wrappers/GameObject/BallWrapper.h"
+#include "bakkesmod/wrappers/Engine/WorldInfoWrapper.h"
 #include "tas_core.h"
 #include "imgui.h"
 
@@ -54,8 +55,10 @@ public:
 		}, "Replay shot and begin an editable recording segment", PERMISSION_ALL);
 
 		cvarManager->registerNotifier("rltas_stop", [this](std::vector<std::string>) {
-			shot_.Stop();
-			Log("Attempt stopped. Use rltas_update to keep the candidate segment.");
+			gameWrapper->Execute([this](GameWrapper*) {
+				StopAttempt();
+				Log("Attempt stopped. Use rltas_update to keep the candidate segment.");
+			});
 		}, "Stop playback or recording", PERMISSION_ALL);
 
 		cvarManager->registerNotifier("rltas_update", [this](std::vector<std::string>) {
@@ -67,7 +70,7 @@ public:
 
 		cvarManager->registerNotifier("rltas_stopandupdate", [this](std::vector<std::string>) {
 			gameWrapper->Execute([this](GameWrapper*) {
-				shot_.Stop();
+				StopAttempt();
 				if (!CommitAndSave())
 					Log("Attempt stopped; there was no candidate segment to update.");
 			});
@@ -84,6 +87,7 @@ public:
 		if (gameWrapper)
 			gameWrapper->UnhookEvent("Function TAGame.Car_TA.SetVehicleInput");
 		shot_.Stop();
+		RestoreTimeDilation();
 	}
 
 	void RenderSettings() override {
@@ -115,6 +119,13 @@ public:
 		ImGui::Text("Status: %s", phaseLabel);
 		ImGui::Text("Saved input frames: %zu", shot_.GetSavedFrameCount());
 		ImGui::Text("Candidate frames: %zu", shot_.GetCandidateFrameCount());
+		bool slowMotion = slowMotionEnabled_.load();
+		if (ImGui::Checkbox("Slow motion while TAS runs", &slowMotion))
+			slowMotionEnabled_.store(slowMotion);
+		float speed = playbackSpeed_.load();
+		if (ImGui::SliderFloat("Game speed", &speed, 0.10f, 1.0f, "%.2fx"))
+			playbackSpeed_.store(speed);
+		ImGui::Text("Flip: %s", flipAvailable_.load() ? "Available" : "Used / unavailable");
 		if (ImGui::BeginCombo("Saved TAS", selectedShot_.empty() ? "Choose a saved TAS" : selectedShot_.c_str())) {
 			for (const auto& file : savedShotFiles_) {
 				const std::string label = file.stem().string();
@@ -140,19 +151,24 @@ public:
 			gameWrapper->Execute([this](GameWrapper*) { StartAttempt(); });
 		ImGui::SameLine();
 		if (ImGui::Button("Stop"))
-			shot_.Stop();
+			gameWrapper->Execute([this](GameWrapper*) { StopAttempt(); });
+		ImGui::SameLine();
+		const auto currentPhase = shot_.GetPhase();
+		const bool canInsertFlip = currentPhase == rltas::Phase::Playing || currentPhase == rltas::Phase::Recording;
+		if (ImGui::Button("Insert Flip Reset") && canInsertFlip)
+			grantFlipRequested_.store(true);
 		ImGui::SameLine();
 		if (ImGui::Button("Update"))
 			gameWrapper->Execute([this](GameWrapper*) { CommitAndSave(); });
 		if (ImGui::Button("Stop and Update")) {
 			gameWrapper->Execute([this](GameWrapper*) {
-				shot_.Stop();
+				StopAttempt();
 				CommitAndSave();
 			});
 		}
 
 		ImGui::Separator();
-		ImGui::TextWrapped("Shot start positions and saved TAS files are supported. Slow motion is still being implemented.");
+		ImGui::TextWrapped("Flip reset actions are inserted at the next controller frame and replay with the shot.");
 	}
 
 	std::string GetPluginName() override {
@@ -235,7 +251,42 @@ private:
 		if (!shot_.Start())
 			return false;
 		breakArmed_.store(false);
+		BeginSlowMotion();
 		return true;
+	}
+
+	void BeginSlowMotion() {
+		if (!slowMotionEnabled_.load() || !gameWrapper->IsInGame())
+			return;
+		ServerWrapper server = gameWrapper->GetGameEventAsServer();
+		if (server.memory_address == 0)
+			return;
+		WorldInfoWrapper world = server.GetWorldInfo();
+		if (world.memory_address == 0)
+			return;
+		previousTimeDilation_ = world.GetTimeDilation();
+		hasTimeDilationSnapshot_ = true;
+		server.SetTimeDilation(playbackSpeed_.load());
+	}
+
+	void RestoreTimeDilation() {
+		if (!hasTimeDilationSnapshot_ || !gameWrapper || !gameWrapper->IsInGame())
+			return;
+		ServerWrapper server = gameWrapper->GetGameEventAsServer();
+		if (server.memory_address != 0)
+			server.SetTimeDilation(previousTimeDilation_);
+		hasTimeDilationSnapshot_ = false;
+	}
+
+	void StopAttempt() {
+		shot_.Stop();
+		RestoreTimeDilation();
+	}
+
+	static void GrantFlip(CarWrapper& car) {
+		// Clear the spent second-jump state and make the next jump input available.
+		car.SetbDoubleJumped(0);
+		car.SetbCanJump(1);
 	}
 
 	void CreateShot(const std::string& name) {
@@ -288,13 +339,15 @@ private:
 	static void WriteInputFrame(std::ostream& out, const rltas::InputFrame& f) {
 		out << f.throttle << ' ' << f.steer << ' ' << f.pitch << ' ' << f.yaw << ' ' << f.roll << ' '
 			<< f.dodgeForward << ' ' << f.dodgeStrafe << ' ' << f.handbrake << ' ' << f.jump << ' '
-			<< f.boost << ' ' << f.holdingBoost << ' ' << f.jumped << '\n';
+			<< f.boost << ' ' << f.holdingBoost << ' ' << f.jumped << ' ' << f.grantFlip << '\n';
 	}
 
-	static bool ReadInputFrame(std::istream& in, rltas::InputFrame& f) {
-		return static_cast<bool>(in >> f.throttle >> f.steer >> f.pitch >> f.yaw >> f.roll
+	static bool ReadInputFrame(std::istream& in, rltas::InputFrame& f, int version) {
+		const bool read = static_cast<bool>(in >> f.throttle >> f.steer >> f.pitch >> f.yaw >> f.roll
 			>> f.dodgeForward >> f.dodgeStrafe >> f.handbrake >> f.jump
 			>> f.boost >> f.holdingBoost >> f.jumped);
+		if (!read) return false;
+		return version < 2 || static_cast<bool>(in >> f.grantFlip);
 	}
 
 	static std::string SafeShotFilename(const std::string& name) {
@@ -342,7 +395,7 @@ private:
 			return false;
 		}
 		const auto frames = shot_.GetSavedFrames();
-		out << "RLTAS 1\n" << std::quoted(name) << '\n' << std::setprecision(std::numeric_limits<float>::max_digits10);
+		out << "RLTAS 2\n" << std::quoted(name) << '\n' << std::setprecision(std::numeric_limits<float>::max_digits10);
 		WritePhysicsState(out, carSnapshot_);
 		WritePhysicsState(out, ballSnapshot_);
 		out << frames.size() << '\n';
@@ -368,14 +421,14 @@ private:
 		std::string name;
 		RBState carState{}, ballState{};
 		std::size_t frameCount = 0;
-		if (!(in >> magic >> version) || magic != "RLTAS" || version != 1 || !(in >> std::quoted(name)) ||
+		if (!(in >> magic >> version) || magic != "RLTAS" || (version != 1 && version != 2) || !(in >> std::quoted(name)) ||
 			!ReadPhysicsState(in, carState) || !ReadPhysicsState(in, ballState) || !(in >> frameCount) || frameCount > 10000000) {
 			Log("That TAS file is invalid or unsupported.");
 			return;
 		}
 		std::vector<rltas::InputFrame> frames(frameCount);
 		for (auto& frame : frames) {
-			if (!ReadInputFrame(in, frame)) {
+			if (!ReadInputFrame(in, frame, version)) {
 				Log("That TAS file is incomplete or damaged.");
 				return;
 			}
@@ -398,10 +451,16 @@ private:
 			return;
 
 		auto* controllerInput = static_cast<ControllerInput*>(params);
-		const rltas::InputFrame liveInput = FromControllerInput(*controllerInput);
+		rltas::InputFrame liveInput = FromControllerInput(*controllerInput);
+		const bool manualFlipGrant = grantFlipRequested_.exchange(false);
+		if (manualFlipGrant)
+			liveInput.grantFlip = true;
+		flipAvailable_.store(car.HasFlip() != 0);
 		const bool isPlaying = shot_.GetPhase() == rltas::Phase::Playing;
 		bool breakPlayback = false;
-		if (isPlaying && breakOnInput_.load()) {
+		if (manualFlipGrant && isPlaying) {
+			breakPlayback = true;
+		} else if (isPlaying && breakOnInput_.load()) {
 			if (!breakArmed_.load()) {
 				if (IsNeutralInput(liveInput))
 					breakArmed_.store(true);
@@ -410,7 +469,10 @@ private:
 			}
 		}
 
-		*controllerInput = ToControllerInput(shot_.ProcessInput(liveInput, breakPlayback));
+		const rltas::InputFrame output = shot_.ProcessInput(liveInput, breakPlayback);
+		if (output.grantFlip)
+			GrantFlip(car);
+		*controllerInput = ToControllerInput(output);
 	}
 
 	void Log(const std::string& message) {
@@ -427,6 +489,12 @@ private:
 	std::array<char, 128> shotName_{};
 	std::atomic<bool> breakOnInput_{true};
 	std::atomic<bool> breakArmed_{false};
+	std::atomic<bool> slowMotionEnabled_{false};
+	std::atomic<float> playbackSpeed_{0.25f};
+	std::atomic<bool> grantFlipRequested_{false};
+	std::atomic<bool> flipAvailable_{false};
+	float previousTimeDilation_ = 1.0f;
+	bool hasTimeDilationSnapshot_ = false;
 };
 
 BAKKESMOD_PLUGIN(RocketLeagueTAS, "Rocket League LAN TAS", "0.1.0", PLUGINTYPE_FREEPLAY)
