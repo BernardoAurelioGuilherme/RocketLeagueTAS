@@ -273,11 +273,16 @@ private:
 	}
 
 	static bool ReadPhysicsState(std::istream& in, RBState& state) {
-		return static_cast<bool>(in >> state.Quaternion.X >> state.Quaternion.Y >> state.Quaternion.Z >> state.Quaternion.W
+		unsigned long sleeping = 0;
+		unsigned long newData = 0;
+		const bool read = static_cast<bool>(in >> state.Quaternion.X >> state.Quaternion.Y >> state.Quaternion.Z >> state.Quaternion.W
 			>> state.Location.X >> state.Location.Y >> state.Location.Z
 			>> state.LinearVelocity.X >> state.LinearVelocity.Y >> state.LinearVelocity.Z
 			>> state.AngularVelocity.X >> state.AngularVelocity.Y >> state.AngularVelocity.Z
-			>> state.Time >> state.bSleeping >> state.bNewData);
+			>> state.Time >> sleeping >> newData);
+		state.bSleeping = sleeping != 0;
+		state.bNewData = newData != 0;
+		return read;
 	}
 
 	static void WriteInputFrame(std::ostream& out, const rltas::InputFrame& f) {
