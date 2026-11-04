@@ -128,6 +128,13 @@ public:
 		std::lock_guard<std::mutex> lock(mutex_);
 		return cursor_;
 	}
+	std::size_t GetSpeedMarkerCount() const {
+		std::lock_guard<std::mutex> lock(mutex_);
+		std::size_t count = 0;
+		for (const auto& frame : frames_) count += frame.speedChange ? 1 : 0;
+		for (const auto& frame : candidate_) count += frame.speedChange ? 1 : 0;
+		return count;
+	}
 	std::vector<InputFrame> GetSavedFrames() const {
 		std::lock_guard<std::mutex> lock(mutex_);
 		return frames_;

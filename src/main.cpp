@@ -128,14 +128,17 @@ public:
 		ImGui::Text("Status: %s", phaseLabel);
 		ImGui::Text("Saved input frames: %zu", shot_.GetSavedFrameCount());
 		ImGui::Text("Candidate frames: %zu", shot_.GetCandidateFrameCount());
+		ImGui::Text("Speed points in shot: %zu", shot_.GetSpeedMarkerCount());
 		float speed = playbackSpeed_.load();
 		if (ImGui::SliderFloat("Game speed", &speed, 0.10f, 2.0f, "%.2fx")) {
 			playbackSpeed_.store(speed);
 			speedNeedsApply_.store(true);
-			gameWrapper->Execute([this](GameWrapper*) {
-				ApplySelectedSpeed();
-				RecordSpeedChangeForActiveShot(playbackSpeed_.load());
-			});
+			const auto phaseAtEdit = shot_.GetPhase();
+			if (phaseAtEdit == rltas::Phase::Playing || phaseAtEdit == rltas::Phase::Recording) {
+				pendingSpeedValue_.store(speed);
+				pendingSpeedMarker_.store(true);
+			}
+			gameWrapper->Execute([this](GameWrapper*) { ApplySelectedSpeed(); });
 		}
 		float hitMultiplier = ballHitMultiplier_.load();
 		if (ImGui::SliderFloat("Ball hit speed multiplier", &hitMultiplier, 1.0f, 5.0f, "%.1fx")) {
@@ -280,20 +283,6 @@ private:
 			server.SetGameSpeed(playbackSpeed_.load());
 			actualGameSpeed_.store(server.GetGameSpeed());
 			speedNeedsApply_.store(false);
-		}
-	}
-
-	void RecordSpeedChangeForActiveShot(float speed) {
-		const auto phase = shot_.GetPhase();
-		if (phase == rltas::Phase::Playing) {
-			if (shot_.SetSpeedMarkerAtPlaybackCursor(speed)) {
-				SaveCurrentShot();
-				return;
-			}
-		}
-		if (phase == rltas::Phase::Playing || phase == rltas::Phase::Recording) {
-			pendingSpeedValue_.store(speed);
-			pendingSpeedMarker_.store(true);
 		}
 	}
 
@@ -489,11 +478,17 @@ private:
 
 		auto* controllerInput = static_cast<ControllerInput*>(params);
 		rltas::InputFrame liveInput = FromControllerInput(*controllerInput);
+		const auto phaseBeforeInput = shot_.GetPhase();
+		const bool isPlaying = phaseBeforeInput == rltas::Phase::Playing;
 		if (pendingSpeedMarker_.exchange(false)) {
-			liveInput.speedChange = true;
-			liveInput.gameSpeed = pendingSpeedValue_.load();
+			const float markedSpeed = pendingSpeedValue_.load();
+			if (isPlaying && shot_.SetSpeedMarkerAtPlaybackCursor(markedSpeed)) {
+				SaveCurrentShot();
+			} else if (phaseBeforeInput == rltas::Phase::Playing || phaseBeforeInput == rltas::Phase::Recording) {
+				liveInput.speedChange = true;
+				liveInput.gameSpeed = markedSpeed;
+			}
 		}
-		const bool isPlaying = shot_.GetPhase() == rltas::Phase::Playing;
 		bool breakPlayback = false;
 		if (isPlaying && breakOnInput_.load()) {
 			if (!breakArmed_.load()) {
@@ -510,6 +505,7 @@ private:
 		if (output.speedChange) {
 			playbackSpeed_.store(output.gameSpeed);
 			ApplySelectedSpeed();
+			Log("Applying TAS speed point: " + std::to_string(output.gameSpeed) + "x");
 		}
 		*controllerInput = ToControllerInput(output);
 
