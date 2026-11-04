@@ -24,6 +24,8 @@ struct InputFrame {
 	bool holdingBoost = false;
 	bool jumped = false;
 	bool grantFlip = false;
+	bool speedChange = false;
+	float gameSpeed = 1.0f;
 };
 
 struct ShotMetadata {
@@ -137,6 +139,14 @@ public:
 		candidate_.clear();
 		cursor_ = 0;
 		phase_ = Phase::Idle;
+	}
+	bool SetSpeedMarkerAtPlaybackCursor(float speed) {
+		std::lock_guard<std::mutex> lock(mutex_);
+		if (phase_ != Phase::Playing || cursor_ >= frames_.size())
+			return false;
+		frames_[cursor_].speedChange = true;
+		frames_[cursor_].gameSpeed = speed;
+		return true;
 	}
 
 private:

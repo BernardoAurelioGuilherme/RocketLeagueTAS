@@ -132,14 +132,17 @@ public:
 		if (ImGui::SliderFloat("Game speed", &speed, 0.10f, 2.0f, "%.2fx")) {
 			playbackSpeed_.store(speed);
 			speedNeedsApply_.store(true);
-			gameWrapper->Execute([this](GameWrapper*) { ApplySelectedSpeed(); });
+			gameWrapper->Execute([this](GameWrapper*) {
+				ApplySelectedSpeed();
+				RecordSpeedChangeForActiveShot(playbackSpeed_.load());
+			});
 		}
 		float hitMultiplier = ballHitMultiplier_.load();
 		if (ImGui::SliderFloat("Ball hit speed multiplier", &hitMultiplier, 1.0f, 5.0f, "%.1fx")) {
 			hitMultiplier = std::round(hitMultiplier * 10.0f) / 10.0f;
 			ballHitMultiplier_.store(hitMultiplier);
 		}
-		ImGui::TextWrapped("Game speed applies continuously while in-game, whether or not a TAS is recording.");
+		ImGui::TextWrapped("Changing Game speed during TAS recording or playback adds a speed point at the current position.");
 		ImGui::Text("Server speed: %.2fx", actualGameSpeed_.load());
 		bool autoFlipReset = autoFlipResetEnabled_.load();
 		if (ImGui::Checkbox("Automatically restore flip after a flip", &autoFlipReset))
@@ -280,6 +283,20 @@ private:
 		}
 	}
 
+	void RecordSpeedChangeForActiveShot(float speed) {
+		const auto phase = shot_.GetPhase();
+		if (phase == rltas::Phase::Playing) {
+			if (shot_.SetSpeedMarkerAtPlaybackCursor(speed)) {
+				SaveCurrentShot();
+				return;
+			}
+		}
+		if (phase == rltas::Phase::Playing || phase == rltas::Phase::Recording) {
+			pendingSpeedValue_.store(speed);
+			pendingSpeedMarker_.store(true);
+		}
+	}
+
 	void StopAttempt() {
 		shot_.Stop();
 	}
@@ -341,7 +358,8 @@ private:
 	static void WriteInputFrame(std::ostream& out, const rltas::InputFrame& f) {
 		out << f.throttle << ' ' << f.steer << ' ' << f.pitch << ' ' << f.yaw << ' ' << f.roll << ' '
 			<< f.dodgeForward << ' ' << f.dodgeStrafe << ' ' << f.handbrake << ' ' << f.jump << ' '
-			<< f.boost << ' ' << f.holdingBoost << ' ' << f.jumped << ' ' << f.grantFlip << '\n';
+			<< f.boost << ' ' << f.holdingBoost << ' ' << f.jumped << ' ' << f.grantFlip << ' '
+			<< f.speedChange << ' ' << f.gameSpeed << '\n';
 	}
 
 	static bool ReadInputFrame(std::istream& in, rltas::InputFrame& f, int version) {
@@ -349,7 +367,9 @@ private:
 			>> f.dodgeForward >> f.dodgeStrafe >> f.handbrake >> f.jump
 			>> f.boost >> f.holdingBoost >> f.jumped);
 		if (!read) return false;
-		return version < 2 || static_cast<bool>(in >> f.grantFlip);
+		if (version >= 2 && !(in >> f.grantFlip)) return false;
+		if (version >= 3 && !(in >> f.speedChange >> f.gameSpeed)) return false;
+		return true;
 	}
 
 	static std::string SafeShotFilename(const std::string& name) {
@@ -380,6 +400,10 @@ private:
 	bool CommitAndSave() {
 		if (!shot_.Update())
 			return false;
+		return SaveCurrentShot();
+	}
+
+	bool SaveCurrentShot() {
 		const std::string name = shot_.GetShotName();
 		if (!hasStartSnapshot_ || name.empty())
 			return false;
@@ -397,7 +421,7 @@ private:
 			return false;
 		}
 		const auto frames = shot_.GetSavedFrames();
-		out << "RLTAS 2\n" << std::quoted(name) << '\n' << std::setprecision(std::numeric_limits<float>::max_digits10);
+		out << "RLTAS 3\n" << std::quoted(name) << '\n' << std::setprecision(std::numeric_limits<float>::max_digits10);
 		WritePhysicsState(out, carSnapshot_);
 		WritePhysicsState(out, ballSnapshot_);
 		out << frames.size() << '\n';
@@ -423,7 +447,7 @@ private:
 		std::string name;
 		RBState carState{}, ballState{};
 		std::size_t frameCount = 0;
-		if (!(in >> magic >> version) || magic != "RLTAS" || (version != 1 && version != 2) || !(in >> std::quoted(name)) ||
+		if (!(in >> magic >> version) || magic != "RLTAS" || version < 1 || version > 3 || !(in >> std::quoted(name)) ||
 			!ReadPhysicsState(in, carState) || !ReadPhysicsState(in, ballState) || !(in >> frameCount) || frameCount > 10000000) {
 			Log("That TAS file is invalid or unsupported.");
 			return;
@@ -465,6 +489,10 @@ private:
 
 		auto* controllerInput = static_cast<ControllerInput*>(params);
 		rltas::InputFrame liveInput = FromControllerInput(*controllerInput);
+		if (pendingSpeedMarker_.exchange(false)) {
+			liveInput.speedChange = true;
+			liveInput.gameSpeed = pendingSpeedValue_.load();
+		}
 		const bool isPlaying = shot_.GetPhase() == rltas::Phase::Playing;
 		bool breakPlayback = false;
 		if (isPlaying && breakOnInput_.load()) {
@@ -479,6 +507,10 @@ private:
 		const rltas::InputFrame output = shot_.ProcessInput(liveInput, breakPlayback);
 		if (output.grantFlip)
 			GrantFlip(car);
+		if (output.speedChange) {
+			playbackSpeed_.store(output.gameSpeed);
+			ApplySelectedSpeed();
+		}
 		*controllerInput = ToControllerInput(output);
 
 		const bool isDodging = car.IsDodging();
@@ -591,9 +623,11 @@ private:
 	std::atomic<bool> breakOnInput_{true};
 	std::atomic<bool> breakArmed_{false};
 	std::atomic<float> playbackSpeed_{1.0f};
+	std::atomic<float> pendingSpeedValue_{1.0f};
 	std::atomic<float> actualGameSpeed_{1.0f};
 	std::atomic<float> ballHitMultiplier_{1.0f};
 	std::atomic<bool> speedNeedsApply_{true};
+	std::atomic<bool> pendingSpeedMarker_{false};
 	std::atomic<bool> autoFlipResetEnabled_{true};
 	std::atomic<bool> flipAvailable_{false};
 	bool wasDodging_ = false;
