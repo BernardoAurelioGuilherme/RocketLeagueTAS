@@ -9,13 +9,17 @@
 #endif
 
 #include "bakkesmod/plugin/bakkesmodplugin.h"
+#include "bakkesmod/plugin/PluginSettingsWindow.h"
 #include "tas_core.h"
+#include "imgui.h"
 
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
 
-class RocketLeagueTAS final : public BakkesMod::Plugin::BakkesModPlugin {
+class RocketLeagueTAS final : public BakkesMod::Plugin::BakkesModPlugin,
+	public BakkesMod::Plugin::PluginSettingsWindow {
 public:
 	void onLoad() override {
 		cvarManager->registerNotifier("rltas_new", [this](std::vector<std::string> args) {
@@ -62,6 +66,61 @@ public:
 		shot_.Stop();
 	}
 
+	void RenderSettings() override {
+		ImGui::TextUnformatted("Rocket League LAN TAS");
+		ImGui::TextWrapped("Build a shot by replaying saved inputs, recording the next section, then keeping it with Update.");
+		ImGui::Separator();
+
+		ImGui::InputText("Shot name", shotName_.data(), shotName_.size());
+		if (ImGui::Button("New Shot")) {
+			if (shotName_[0] != '\0') {
+				rltas::ShotMetadata metadata;
+				metadata.name = shotName_.data();
+				shot_.NewShot(std::move(metadata));
+			}
+		}
+		ImGui::SameLine();
+		ImGui::Text("%s", shot_.GetMetadata().name.empty()
+			? "No shot loaded"
+			: shot_.GetMetadata().name.c_str());
+
+		const auto phase = shot_.GetPhase();
+		const char* phaseLabel = "Idle";
+		switch (phase) {
+		case rltas::Phase::Playing: phaseLabel = "Playing"; break;
+		case rltas::Phase::Recording: phaseLabel = "Recording"; break;
+		case rltas::Phase::Stopped: phaseLabel = "Stopped"; break;
+		case rltas::Phase::Idle: default: break;
+		}
+		ImGui::Text("Status: %s", phaseLabel);
+		ImGui::Text("Saved input frames: %zu", shot_.GetFrames().size());
+		ImGui::Text("Candidate frames: %zu", shot_.GetCandidateFrameCount());
+
+		if (ImGui::Button("Play / Record"))
+			shot_.Start();
+		ImGui::SameLine();
+		if (ImGui::Button("Stop"))
+			shot_.Stop();
+		ImGui::SameLine();
+		if (ImGui::Button("Update"))
+			shot_.Update();
+		if (ImGui::Button("Stop and Update")) {
+			shot_.Stop();
+			shot_.Update();
+		}
+
+		ImGui::Separator();
+		ImGui::TextWrapped("This build has the UI and shot-state controls. Game input capture, playback, slow motion, and shot files are still being implemented.");
+	}
+
+	std::string GetPluginName() override {
+		return "RocketLeagueTAS";
+	}
+
+	void SetImGuiContext(uintptr_t context) override {
+		ImGui::SetCurrentContext(reinterpret_cast<ImGuiContext*>(context));
+	}
+
 private:
 	void Log(const std::string& message) {
 		if (cvarManager)
@@ -69,6 +128,7 @@ private:
 	}
 
 	rltas::ShotSession shot_;
+	std::array<char, 128> shotName_{};
 };
 
 BAKKESMOD_PLUGIN(RocketLeagueTAS, "Rocket League LAN TAS", "0.1.0", PLUGINTYPE_FREEPLAY)

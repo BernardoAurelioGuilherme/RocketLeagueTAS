@@ -12,11 +12,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(BAKKESMOD_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/bakkesmod")
 
 add_library(RocketLeagueTAS SHARED
-	 src/main.cpp
+	src/main.cpp
+	include/imgui/imgui.cpp
+	include/imgui/imgui_draw.cpp
+	include/imgui/imgui_widgets.cpp
 )
 
 target_include_directories(RocketLeagueTAS PRIVATE
 	"${CMAKE_CURRENT_SOURCE_DIR}/src"
+	"${CMAKE_CURRENT_SOURCE_DIR}/include/imgui"
 	"${BAKKESMOD_SDK_DIR}/include"
 	"${BAKKESMOD_SDK_DIR}/include/bakkesmod"
 	"${BAKKESMOD_SDK_DIR}/include/bakkesmod/wrappers"

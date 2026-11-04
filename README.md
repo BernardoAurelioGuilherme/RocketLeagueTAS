@@ -7,16 +7,20 @@ inputs in Rocket Plugin LAN games.
 
 This is an early project foundation, not a usable TAS yet. It currently contains:
 
+- A BakkesMod settings panel for naming a shot and using Play / Record, Stop,
+  Update, and Stop and Update controls.
 - A shot editing state model for replay, candidate recording, Stop, and Update.
 - Console commands: `rltas_new <name>`, `rltas_start`, `rltas_stop`,
   `rltas_update`, and `rltas_stopandupdate`.
+- Dear ImGui sources from the BakkesMod SDK bundle, matching the SDK's plugin
+  settings interface.
 - A CMake target configured for a Windows x64 MSVC build.
 
-Game input interception and playback are deliberately not wired yet. The next
-implementation step is to confirm the SDK hook's input parameter behavior in a
-local Rocket Plugin match, then connect one input frame to `ShotSession` per
-game frame. The commands currently exercise only the project state model and
-write status to the BakkesMod console.
+The panel currently controls the shot state model only. Game input capture,
+playback, slow motion, and saving/loading shot files are not implemented yet.
+The next implementation step is to confirm the SDK hook's input parameter
+behavior in a local Rocket Plugin match, then connect one input frame to
+`ShotSession` per game frame.
 
 ## Shot editing rules
 
