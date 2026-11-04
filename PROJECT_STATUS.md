@@ -10,7 +10,7 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 - Update commits the candidate input segment and saves a `.rltas` file.
 - Saved TAS dropdown, Load TAS, and Refresh list controls.
 - TAS files are stored in BakkesMod's data folder at `RocketLeagueTAS/shots`.
-- Global game speed control (0.10x to 2.00x), applied outside TAS attempts and periodically enforced during gameplay using BakkesMod's `gamespeed` command.
+- Global game speed control (0.10x to 2.00x), applied outside TAS attempts and periodically enforced through `ServerWrapper::SetGameSpeed`.
 - HUD flip availability readout using `CarWrapper::HasFlip()`.
 - Automatic flip restoration detects the local car's dodge ending in midair and restores the flip if one is not available. This is enabled by default and can be toggled in the UI.
 - `.rltas` format version 2 stores flip reset markers and continues to load version 1 files.
@@ -18,9 +18,8 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 
 ## Latest build
 
-- Latest source commit: `de0d5ca` (`Fix game speed polling wrapper constness`).
-- Windows GitHub Actions run `41918124333` succeeded.
-- The built DLL was installed to the user's BakkesMod plugin folder. Reload the plugin or restart Rocket League to use it.
+- Latest source commit: `3f542ec` (`Set live server speed through ServerWrapper`).
+- Windows GitHub Actions run `41920280741` succeeded.
 - The latest DLL is installed in the user's BakkesMod plugin folder; reload the plugin or restart Rocket League to use it.
 
 ## Next test steps
