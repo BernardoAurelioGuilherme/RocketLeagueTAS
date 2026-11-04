@@ -16,8 +16,13 @@
 #include "imgui.h"
 
 #include <array>
+#include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -26,6 +31,7 @@ class RocketLeagueTAS final : public BakkesMod::Plugin::BakkesModPlugin,
 	public BakkesMod::Plugin::PluginSettingsWindow {
 public:
 	void onLoad() override {
+		RefreshSavedShots();
 		cvarManager->registerNotifier("rltas_new", [this](std::vector<std::string> args) {
 			if (args.size() < 2) {
 				Log("Usage: rltas_new <shot name>");
@@ -53,16 +59,18 @@ public:
 		}, "Stop playback or recording", PERMISSION_ALL);
 
 		cvarManager->registerNotifier("rltas_update", [this](std::vector<std::string>) {
-			Log(shot_.Update()
-				? "Candidate segment committed to the shot."
-				: "No stopped candidate segment to update.");
+			gameWrapper->Execute([this](GameWrapper*) {
+				if (!CommitAndSave())
+					Log("No stopped candidate segment to update.");
+			});
 		}, "Commit the last candidate input segment", PERMISSION_ALL);
 
 		cvarManager->registerNotifier("rltas_stopandupdate", [this](std::vector<std::string>) {
-			shot_.Stop();
-			Log(shot_.Update()
-				? "Attempt stopped and candidate segment committed."
-				: "Attempt stopped; there was no candidate segment to update.");
+			gameWrapper->Execute([this](GameWrapper*) {
+				shot_.Stop();
+				if (!CommitAndSave())
+					Log("Attempt stopped; there was no candidate segment to update.");
+			});
 		}, "Stop and commit the candidate input segment", PERMISSION_ALL);
 
 		gameWrapper->HookEventWithCaller<CarWrapper>(
@@ -107,6 +115,23 @@ public:
 		ImGui::Text("Status: %s", phaseLabel);
 		ImGui::Text("Saved input frames: %zu", shot_.GetSavedFrameCount());
 		ImGui::Text("Candidate frames: %zu", shot_.GetCandidateFrameCount());
+		if (ImGui::BeginCombo("Saved TAS", selectedShot_.empty() ? "Choose a saved TAS" : selectedShot_.c_str())) {
+			for (const auto& file : savedShotFiles_) {
+				const std::string label = file.stem().string();
+				const bool selected = label == selectedShot_;
+				if (ImGui::Selectable(label.c_str(), selected))
+					selectedShot_ = label;
+				if (selected)
+					ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Load TAS"))
+			LoadSelectedShot();
+		ImGui::SameLine();
+		if (ImGui::Button("Refresh list"))
+			RefreshSavedShots();
 		bool breakOnInput = breakOnInput_.load();
 		if (ImGui::Checkbox("Any controller input starts recording", &breakOnInput))
 			breakOnInput_.store(breakOnInput);
@@ -118,14 +143,16 @@ public:
 			shot_.Stop();
 		ImGui::SameLine();
 		if (ImGui::Button("Update"))
-			shot_.Update();
+			gameWrapper->Execute([this](GameWrapper*) { CommitAndSave(); });
 		if (ImGui::Button("Stop and Update")) {
-			shot_.Stop();
-			shot_.Update();
+			gameWrapper->Execute([this](GameWrapper*) {
+				shot_.Stop();
+				CommitAndSave();
+			});
 		}
 
 		ImGui::Separator();
-		ImGui::TextWrapped("Input capture and playback are active. Slow motion and shot files are still being implemented.");
+		ImGui::TextWrapped("Shot start positions and saved TAS files are supported. Slow motion is still being implemented.");
 	}
 
 	std::string GetPluginName() override {
@@ -191,15 +218,19 @@ private:
 		if (phase == rltas::Phase::Playing || phase == rltas::Phase::Recording)
 			return false;
 		BallWrapper ball = gameWrapper->GetGameEventAsServer().GetBall();
-		if (ball.memory_address == 0)
+		CarWrapper car = gameWrapper->GetLocalCar();
+		if (ball.memory_address == 0 || car.memory_address == 0)
 			return false;
 
-		if (!hasBallSnapshot_) {
+		if (!hasStartSnapshot_) {
 			ballSnapshot_ = ball.GetRBState();
-			hasBallSnapshot_ = true;
+			carSnapshot_ = car.GetRBState();
+			hasStartSnapshot_ = true;
 		} else {
-			RBState state = ballSnapshot_;
-			ball.SetPhysicsState(state);
+			RBState ballState = ballSnapshot_;
+			RBState carState = carSnapshot_;
+			ball.SetPhysicsState(ballState);
+			car.SetPhysicsState(carState);
 		}
 		if (!shot_.Start())
 			return false;
@@ -213,17 +244,144 @@ private:
 			return;
 		}
 		BallWrapper ball = gameWrapper->GetGameEventAsServer().GetBall();
-		if (ball.memory_address == 0) {
-			Log("No ball is available in this match.");
+		CarWrapper car = gameWrapper->GetLocalCar();
+		if (ball.memory_address == 0 || car.memory_address == 0) {
+			Log("The local car and ball must be available to create a shot.");
 			return;
 		}
 		ballSnapshot_ = ball.GetRBState();
-		hasBallSnapshot_ = true;
+		carSnapshot_ = car.GetRBState();
+		hasStartSnapshot_ = true;
 		rltas::ShotMetadata metadata;
 		metadata.name = name;
 		shot_.NewShot(std::move(metadata));
+		selectedShot_ = name;
 		breakArmed_.store(false);
-		Log("New shot created with the current ball state: " + name);
+		Log("New shot created with the current car and ball states: " + name);
+	}
+
+	std::filesystem::path ShotsDirectory() const {
+		return gameWrapper->GetDataFolder() / "RocketLeagueTAS" / "shots";
+	}
+
+	static void WritePhysicsState(std::ostream& out, const RBState& state) {
+		out << state.Quaternion.X << ' ' << state.Quaternion.Y << ' ' << state.Quaternion.Z << ' ' << state.Quaternion.W << ' '
+			<< state.Location.X << ' ' << state.Location.Y << ' ' << state.Location.Z << ' '
+			<< state.LinearVelocity.X << ' ' << state.LinearVelocity.Y << ' ' << state.LinearVelocity.Z << ' '
+			<< state.AngularVelocity.X << ' ' << state.AngularVelocity.Y << ' ' << state.AngularVelocity.Z << ' '
+			<< state.Time << ' ' << state.bSleeping << ' ' << state.bNewData << '\n';
+	}
+
+	static bool ReadPhysicsState(std::istream& in, RBState& state) {
+		return static_cast<bool>(in >> state.Quaternion.X >> state.Quaternion.Y >> state.Quaternion.Z >> state.Quaternion.W
+			>> state.Location.X >> state.Location.Y >> state.Location.Z
+			>> state.LinearVelocity.X >> state.LinearVelocity.Y >> state.LinearVelocity.Z
+			>> state.AngularVelocity.X >> state.AngularVelocity.Y >> state.AngularVelocity.Z
+			>> state.Time >> state.bSleeping >> state.bNewData);
+	}
+
+	static void WriteInputFrame(std::ostream& out, const rltas::InputFrame& f) {
+		out << f.throttle << ' ' << f.steer << ' ' << f.pitch << ' ' << f.yaw << ' ' << f.roll << ' '
+			<< f.dodgeForward << ' ' << f.dodgeStrafe << ' ' << f.handbrake << ' ' << f.jump << ' '
+			<< f.boost << ' ' << f.holdingBoost << ' ' << f.jumped << '\n';
+	}
+
+	static bool ReadInputFrame(std::istream& in, rltas::InputFrame& f) {
+		return static_cast<bool>(in >> f.throttle >> f.steer >> f.pitch >> f.yaw >> f.roll
+			>> f.dodgeForward >> f.dodgeStrafe >> f.handbrake >> f.jump
+			>> f.boost >> f.holdingBoost >> f.jumped);
+	}
+
+	static std::string SafeShotFilename(const std::string& name) {
+		std::string safe;
+		for (unsigned char ch : name) {
+			if (ch >= 32 && ch != '/' && ch != '\\' && ch != ':' && ch != '*' && ch != '?' &&
+				ch != '"' && ch != '<' && ch != '>' && ch != '|')
+				safe.push_back(static_cast<char>(ch));
+		}
+		while (!safe.empty() && (safe.back() == '.' || safe.back() == ' ')) safe.pop_back();
+		return safe.empty() ? "Untitled" : safe;
+	}
+
+	void RefreshSavedShots() {
+		savedShotFiles_.clear();
+		std::error_code ec;
+		const auto directory = ShotsDirectory();
+		std::filesystem::create_directories(directory, ec);
+		if (ec)
+			return;
+		for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
+			if (ec) break;
+			if (entry.is_regular_file() && entry.path().extension() == ".rltas")
+				savedShotFiles_.push_back(entry.path());
+		}
+	}
+
+	bool CommitAndSave() {
+		if (!shot_.Update())
+			return false;
+		const std::string name = shot_.GetShotName();
+		if (!hasStartSnapshot_ || name.empty())
+			return false;
+		std::error_code ec;
+		const auto directory = ShotsDirectory();
+		std::filesystem::create_directories(directory, ec);
+		if (ec) {
+			Log("Could not create the TAS save folder.");
+			return false;
+		}
+		const auto path = directory / (SafeShotFilename(name) + ".rltas");
+		std::ofstream out(path, std::ios::trunc);
+		if (!out) {
+			Log("Could not save TAS file: " + path.string());
+			return false;
+		}
+		const auto frames = shot_.GetSavedFrames();
+		out << "RLTAS 1\n" << std::quoted(name) << '\n' << std::setprecision(std::numeric_limits<float>::max_digits10);
+		WritePhysicsState(out, carSnapshot_);
+		WritePhysicsState(out, ballSnapshot_);
+		out << frames.size() << '\n';
+		for (const auto& frame : frames) WriteInputFrame(out, frame);
+		if (!out) {
+			Log("Writing the TAS file failed.");
+			return false;
+		}
+		selectedShot_ = name;
+		RefreshSavedShots();
+		Log("Saved TAS: " + name);
+		return true;
+	}
+
+	void LoadSelectedShot() {
+		const auto it = std::find_if(savedShotFiles_.begin(), savedShotFiles_.end(), [this](const auto& file) {
+			return file.stem().string() == selectedShot_;
+		});
+		if (it == savedShotFiles_.end()) return;
+		std::ifstream in(*it);
+		std::string magic;
+		int version = 0;
+		std::string name;
+		RBState carState{}, ballState{};
+		std::size_t frameCount = 0;
+		if (!(in >> magic >> version) || magic != "RLTAS" || version != 1 || !(in >> std::quoted(name)) ||
+			!ReadPhysicsState(in, carState) || !ReadPhysicsState(in, ballState) || !(in >> frameCount) || frameCount > 10000000) {
+			Log("That TAS file is invalid or unsupported.");
+			return;
+		}
+		std::vector<rltas::InputFrame> frames(frameCount);
+		for (auto& frame : frames) {
+			if (!ReadInputFrame(in, frame)) {
+				Log("That TAS file is incomplete or damaged.");
+				return;
+			}
+		}
+		carSnapshot_ = carState;
+		ballSnapshot_ = ballState;
+		hasStartSnapshot_ = true;
+		rltas::ShotMetadata metadata;
+		metadata.name = name;
+		shot_.LoadShot(std::move(metadata), std::move(frames));
+		Log("Loaded TAS: " + name);
 	}
 
 	void OnVehicleInput(CarWrapper car, void* params) {
@@ -256,8 +414,11 @@ private:
 	}
 
 	rltas::ShotSession shot_;
+	RBState carSnapshot_{};
 	RBState ballSnapshot_{};
-	bool hasBallSnapshot_ = false;
+	bool hasStartSnapshot_ = false;
+	std::vector<std::filesystem::path> savedShotFiles_;
+	std::string selectedShot_;
 	std::array<char, 128> shotName_{};
 	std::atomic<bool> breakOnInput_{true};
 	std::atomic<bool> breakArmed_{false};

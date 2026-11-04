@@ -125,6 +125,18 @@ public:
 		std::lock_guard<std::mutex> lock(mutex_);
 		return cursor_;
 	}
+	std::vector<InputFrame> GetSavedFrames() const {
+		std::lock_guard<std::mutex> lock(mutex_);
+		return frames_;
+	}
+	void LoadShot(ShotMetadata metadata, std::vector<InputFrame> frames) {
+		std::lock_guard<std::mutex> lock(mutex_);
+		metadata_ = std::move(metadata);
+		frames_ = std::move(frames);
+		candidate_.clear();
+		cursor_ = 0;
+		phase_ = Phase::Idle;
+	}
 
 private:
 	mutable std::mutex mutex_;
