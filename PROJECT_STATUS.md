@@ -11,6 +11,7 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 - Saved TAS dropdown, Load TAS, and Refresh list controls.
 - TAS files are stored in BakkesMod's data folder at `RocketLeagueTAS/shots`.
 - Global game speed control (0.10x to 2.00x), applied outside TAS attempts and periodically enforced through `ServerWrapper::SetGameSpeed`.
+- Ball hit speed multiplier slider from 1.0x to 5.0x in 0.1 increments. It scales the local car's velocity change to the ball on contact and raises the ball max linear speed to match.
 - HUD flip availability readout using `CarWrapper::HasFlip()`.
 - Automatic flip restoration detects the local car's dodge ending in midair and restores the flip if one is not available. This is enabled by default and can be toggled in the UI.
 - `.rltas` format version 2 stores flip reset markers and continues to load version 1 files.
@@ -18,9 +19,10 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 
 ## Latest build
 
-- Latest source commit: `3f542ec` (`Set live server speed through ServerWrapper`).
-- Windows GitHub Actions run `41920280741` succeeded.
+- Latest source commit: `7ef5191` (`Snap ball multiplier to tenths`).
+- Windows GitHub Actions run `41925761529` succeeded.
 - The latest DLL is installed in the user's BakkesMod plugin folder; reload the plugin or restart Rocket League to use it.
+- The ball multiplier is built and installed; it still needs in-game verification.
 
 ## Next test steps
 
@@ -31,7 +33,8 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 5. Check whether the car and ball return to their recorded states and whether playback behaves as expected in the LAN match.
 6. Change Game speed and verify it applies even while no TAS attempt is active.
 7. With automatic flip restoration enabled (default), use a flip in the air and check whether the next airborne jump input has a flip available again.
-8. Report any issues before adding other features.
+8. Set Ball hit speed multiplier to 1.2x, hit a still ball with a repeatable touch, and compare its outgoing speed with 1.0x. Then try 5.0x and confirm the ball remains controllable.
+9. Report any issues before adding other features.
 
 ## Repository
 
