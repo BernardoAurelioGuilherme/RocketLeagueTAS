@@ -11,7 +11,7 @@ state when a shot is replayed.
 
 - Record, play, stop, update, and retry shot attempts from frame zero.
 - Save and select named shots in the plugin menu; shot files use the `.rltas`
-  format.
+  format (version 4; versions 1–3 remain loadable).
 - Restore the starting car and ball state for repeatable attempts.
 - Change game speed from 0.10x to 2.00x, including while a shot is playing or
   recording.
@@ -19,7 +19,6 @@ state when a shot is replayed.
   change is saved at the next input frame and reproduced during playback.
 - Scale local car velocity changes on ball contact from 1.0x to 5.0x, in 0.1x
   steps.
-- Optionally grant a flip after a dodge ends.
 
 The plugin records car inputs only. It does not record or replay other players'
 inputs. These tools are intended for offline and LAN sessions with BakkesMod

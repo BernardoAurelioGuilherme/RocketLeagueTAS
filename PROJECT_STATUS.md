@@ -13,9 +13,7 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 - Global game speed control (0.10x to 2.00x), applied outside TAS attempts and periodically enforced through `ServerWrapper::SetGameSpeed`.
 - Changing the Game speed slider during recording or playback queues a speed point that is attached atomically to the next input frame. Playback speed points save immediately; recording speed points save with Stop and Update. The HUD reports the speed-point count.
 - Ball hit speed multiplier slider from 1.0x to 5.0x in 0.1 increments. It scales the local car's velocity change to the ball on contact and raises the ball max linear speed to match.
-- HUD flip availability readout using `CarWrapper::HasFlip()`.
-- Automatic flip restoration detects the local car's dodge ending in midair and restores the flip if one is not available. This is enabled by default and can be toggled in the UI.
-- `.rltas` format version 3 stores flip and speed markers and continues to load versions 1 and 2.
+- `.rltas` format version 4 stores speed markers and continues to load versions 1–3; legacy flip-reset markers are ignored.
 - Other future functions are not implemented yet.
 
 ## Latest build
@@ -33,10 +31,9 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 4. Move the car and ball, select the shot from Saved TAS, click Load TAS, then Play / Record.
 5. Check whether the car and ball return to their recorded states and whether playback behaves as expected in the LAN match.
 6. Change Game speed and verify it applies even while no TAS attempt is active.
-7. With automatic flip restoration enabled (default), use a flip in the air and check whether the next airborne jump input has a flip available again.
-8. Set Ball hit speed multiplier to 1.2x, hit a still ball with a repeatable touch, and compare its outgoing speed with 1.0x. Then try 5.0x and confirm the ball remains controllable.
-9. During recording or playback, change Game speed; verify the speed-point counter increments and the change repeats on playback.
-10. Report any issues before adding other features.
+7. Set Ball hit speed multiplier to 1.2x, hit a still ball with a repeatable touch, and compare its outgoing speed with 1.0x. Then try 5.0x and confirm the ball remains controllable.
+8. During recording or playback, change Game speed; verify the speed-point counter increments and the change repeats on playback.
+9. Report any issues before adding other features.
 
 ## Repository
 

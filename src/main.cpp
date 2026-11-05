@@ -147,10 +147,6 @@ public:
 		}
 		ImGui::TextWrapped("Changing Game speed during TAS recording or playback adds a speed point at the current position.");
 		ImGui::Text("Server speed: %.2fx", actualGameSpeed_.load());
-		bool autoFlipReset = autoFlipResetEnabled_.load();
-		if (ImGui::Checkbox("Automatically restore flip after a flip", &autoFlipReset))
-			autoFlipResetEnabled_.store(autoFlipReset);
-		ImGui::Text("Flip: %s", flipAvailable_.load() ? "Available" : "Used / unavailable");
 		if (ImGui::BeginCombo("Saved TAS", selectedShot_.empty() ? "Choose a saved TAS" : selectedShot_.c_str())) {
 			for (const auto& file : savedShotFiles_) {
 				const std::string label = file.stem().string();
@@ -188,7 +184,6 @@ public:
 		}
 
 		ImGui::Separator();
-		ImGui::TextWrapped("Flip restoration is detected automatically when your dodge finishes.");
 	}
 
 	std::string GetPluginName() override {
@@ -290,12 +285,6 @@ private:
 		shot_.Stop();
 	}
 
-	static void GrantFlip(CarWrapper& car) {
-		// Clear the spent second-jump state and make the next jump input available.
-		car.SetbDoubleJumped(0);
-		car.SetbCanJump(1);
-	}
-
 	void CreateShot(const std::string& name) {
 		if (!gameWrapper->IsInGame()) {
 			Log("Join the LAN match before creating a shot so its ball start state can be captured.");
@@ -347,7 +336,7 @@ private:
 	static void WriteInputFrame(std::ostream& out, const rltas::InputFrame& f) {
 		out << f.throttle << ' ' << f.steer << ' ' << f.pitch << ' ' << f.yaw << ' ' << f.roll << ' '
 			<< f.dodgeForward << ' ' << f.dodgeStrafe << ' ' << f.handbrake << ' ' << f.jump << ' '
-			<< f.boost << ' ' << f.holdingBoost << ' ' << f.jumped << ' ' << f.grantFlip << ' '
+			<< f.boost << ' ' << f.holdingBoost << ' ' << f.jumped << ' '
 			<< f.speedChange << ' ' << f.gameSpeed << '\n';
 	}
 
@@ -356,7 +345,10 @@ private:
 			>> f.dodgeForward >> f.dodgeStrafe >> f.handbrake >> f.jump
 			>> f.boost >> f.holdingBoost >> f.jumped);
 		if (!read) return false;
-		if (version >= 2 && !(in >> f.grantFlip)) return false;
+		// Versions 2 and 3 stored the now-removed flip-reset marker. Consume it
+		// so existing shots remain loadable.
+		unsigned long legacyFlipMarker = 0;
+		if ((version == 2 || version == 3) && !(in >> legacyFlipMarker)) return false;
 		if (version >= 3 && !(in >> f.speedChange >> f.gameSpeed)) return false;
 		return true;
 	}
@@ -410,7 +402,7 @@ private:
 			return false;
 		}
 		const auto frames = shot_.GetSavedFrames();
-		out << "RLTAS 3\n" << std::quoted(name) << '\n' << std::setprecision(std::numeric_limits<float>::max_digits10);
+		out << "RLTAS 4\n" << std::quoted(name) << '\n' << std::setprecision(std::numeric_limits<float>::max_digits10);
 		WritePhysicsState(out, carSnapshot_);
 		WritePhysicsState(out, ballSnapshot_);
 		out << frames.size() << '\n';
@@ -436,7 +428,7 @@ private:
 		std::string name;
 		RBState carState{}, ballState{};
 		std::size_t frameCount = 0;
-		if (!(in >> magic >> version) || magic != "RLTAS" || version < 1 || version > 3 || !(in >> std::quoted(name)) ||
+		if (!(in >> magic >> version) || magic != "RLTAS" || version < 1 || version > 4 || !(in >> std::quoted(name)) ||
 			!ReadPhysicsState(in, carState) || !ReadPhysicsState(in, ballState) || !(in >> frameCount) || frameCount > 10000000) {
 			Log("That TAS file is invalid or unsupported.");
 			return;
@@ -497,8 +489,6 @@ private:
 			liveInput, breakPlayback, insertSpeedPoint, markedSpeed, &savedSpeedPoint);
 		if (savedSpeedPoint)
 			SaveCurrentShot();
-		if (output.grantFlip)
-			GrantFlip(car);
 		if (output.speedChange) {
 			playbackSpeed_.store(output.gameSpeed);
 			ApplySelectedSpeed();
@@ -506,11 +496,6 @@ private:
 		}
 		*controllerInput = ToControllerInput(output);
 
-		const bool isDodging = car.IsDodging();
-		if (wasDodging_ && !isDodging && !car.GetbOnGround() && !car.HasFlip() && autoFlipResetEnabled_.load())
-			GrantFlip(car);
-		wasDodging_ = isDodging;
-		flipAvailable_.store(car.HasFlip() != 0);
 	}
 
 	struct CarHitBallParams {
@@ -621,9 +606,6 @@ private:
 	std::atomic<float> ballHitMultiplier_{1.0f};
 	std::atomic<bool> speedNeedsApply_{true};
 	std::atomic<bool> pendingSpeedMarker_{false};
-	std::atomic<bool> autoFlipResetEnabled_{true};
-	std::atomic<bool> flipAvailable_{false};
-	bool wasDodging_ = false;
 	unsigned int speedCheckCounter_ = 0;
 	Vector ballVelocityBeforeHit_{};
 	std::uintptr_t pendingHitBallAddress_ = 0;
