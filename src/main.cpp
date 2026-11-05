@@ -147,6 +147,7 @@ public:
 		}
 		ImGui::TextWrapped("Changing Game speed during TAS recording or playback adds a speed point at the current position.");
 		ImGui::Text("Server speed: %.2fx", actualGameSpeed_.load());
+		ImGui::Text("Shot start speed: %.2fx", shotStartSpeed_.load());
 		if (ImGui::BeginCombo("Saved TAS", selectedShot_.empty() ? "Choose a saved TAS" : selectedShot_.c_str())) {
 			for (const auto& file : savedShotFiles_) {
 				const std::string label = file.stem().string();
@@ -266,6 +267,12 @@ private:
 		}
 		if (!shot_.Start())
 			return false;
+		// Every retry starts at the shot's recorded speed, so speed points are
+		// meaningful even when the last attempt or UI edit left another speed set.
+		playbackSpeed_.store(shotStartSpeed_.load());
+		speedNeedsApply_.store(true);
+		pendingSpeedMarker_.store(false);
+		ApplySelectedSpeed();
 		breakArmed_.store(false);
 		return true;
 	}
@@ -298,6 +305,7 @@ private:
 		}
 		ballSnapshot_ = ball.GetRBState();
 		carSnapshot_ = car.GetRBState();
+		shotStartSpeed_.store(playbackSpeed_.load());
 		CaptureBallSpeedCap(ball);
 		hasStartSnapshot_ = true;
 		rltas::ShotMetadata metadata;
@@ -402,7 +410,9 @@ private:
 			return false;
 		}
 		const auto frames = shot_.GetSavedFrames();
-		out << "RLTAS 4\n" << std::quoted(name) << '\n' << std::setprecision(std::numeric_limits<float>::max_digits10);
+		out << "RLTAS 5\n" << std::quoted(name) << '\n'
+			<< std::setprecision(std::numeric_limits<float>::max_digits10)
+			<< shotStartSpeed_.load() << '\n';
 		WritePhysicsState(out, carSnapshot_);
 		WritePhysicsState(out, ballSnapshot_);
 		out << frames.size() << '\n';
@@ -428,9 +438,15 @@ private:
 		std::string name;
 		RBState carState{}, ballState{};
 		std::size_t frameCount = 0;
-		if (!(in >> magic >> version) || magic != "RLTAS" || version < 1 || version > 4 || !(in >> std::quoted(name)) ||
+		float shotStartSpeed = 1.0f;
+		if (!(in >> magic >> version) || magic != "RLTAS" || version < 1 || version > 5 || !(in >> std::quoted(name)) ||
+			(version >= 5 && !(in >> shotStartSpeed)) ||
 			!ReadPhysicsState(in, carState) || !ReadPhysicsState(in, ballState) || !(in >> frameCount) || frameCount > 10000000) {
 			Log("That TAS file is invalid or unsupported.");
+			return;
+		}
+		if (!std::isfinite(shotStartSpeed)) {
+			Log("That TAS file has an invalid starting speed.");
 			return;
 		}
 		std::vector<rltas::InputFrame> frames(frameCount);
@@ -442,6 +458,7 @@ private:
 		}
 		carSnapshot_ = carState;
 		ballSnapshot_ = ballState;
+		shotStartSpeed_.store(std::clamp(shotStartSpeed, 0.10f, 2.0f));
 		hasStartSnapshot_ = true;
 		rltas::ShotMetadata metadata;
 		metadata.name = name;
@@ -601,6 +618,7 @@ private:
 	std::atomic<bool> breakOnInput_{true};
 	std::atomic<bool> breakArmed_{false};
 	std::atomic<float> playbackSpeed_{1.0f};
+	std::atomic<float> shotStartSpeed_{1.0f};
 	std::atomic<float> pendingSpeedValue_{1.0f};
 	std::atomic<float> actualGameSpeed_{1.0f};
 	std::atomic<float> ballHitMultiplier_{1.0f};

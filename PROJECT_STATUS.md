@@ -12,8 +12,9 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 - TAS files are stored in BakkesMod's data folder at `RocketLeagueTAS/shots`.
 - Global game speed control (0.10x to 2.00x), applied outside TAS attempts and periodically enforced through `ServerWrapper::SetGameSpeed`.
 - Changing the Game speed slider during recording or playback queues a speed point that is attached atomically to the next input frame. Playback speed points save immediately; recording speed points save with Stop and Update. The HUD reports the speed-point count.
+- Each shot stores its starting game speed and restores it at the beginning of every retry, so speed points are replayed from a known baseline.
 - Ball hit speed multiplier slider from 1.0x to 5.0x in 0.1 increments. It scales the local car's velocity change to the ball on contact and raises the ball max linear speed to match.
-- `.rltas` format version 4 stores speed markers and continues to load versions 1–3; legacy flip-reset markers are ignored.
+- `.rltas` format version 5 stores the shot starting speed and speed markers. Versions 1–4 remain loadable; legacy flip-reset markers are ignored.
 - Other future functions are not implemented yet.
 
 ## Latest build

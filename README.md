@@ -11,12 +11,13 @@ state when a shot is replayed.
 
 - Record, play, stop, update, and retry shot attempts from frame zero.
 - Save and select named shots in the plugin menu; shot files use the `.rltas`
-  format (version 4; versions 1–3 remain loadable).
+  format (version 5; versions 1–4 remain loadable).
 - Restore the starting car and ball state for repeatable attempts.
 - Change game speed from 0.10x to 2.00x, including while a shot is playing or
   recording.
 - Insert game-speed changes into a shot while recording or playing. A queued
-  change is saved at the next input frame and reproduced during playback.
+  change is saved at the next input frame and reproduced during playback. Each
+  shot remembers its starting speed, which is restored on every retry.
 - Scale local car velocity changes on ball contact from 1.0x to 5.0x, in 0.1x
   steps.
 
