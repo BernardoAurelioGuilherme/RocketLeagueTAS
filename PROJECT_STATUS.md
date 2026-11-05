@@ -18,8 +18,8 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 
 ## Latest build
 
-- Latest source commit: `90859a1` (`Insert TAS speed points on next input frame`).
-- Windows GitHub Actions run `41936464081` succeeded.
+- Latest source commit: `d51cf93` (`Remove automatic flip reset feature`).
+- Windows GitHub Actions run `41944315189` succeeded.
 - The latest DLL is installed in the user's BakkesMod plugin folder; reload the plugin or restart Rocket League to use it.
 - Ball hit velocity scaling is applied 0.01 seconds after the hit callback so the normal collision physics can settle first. The ball multiplier is built and installed; retest to confirm the ball no longer feels heavy.
 
