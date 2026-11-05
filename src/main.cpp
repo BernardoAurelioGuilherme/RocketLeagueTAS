@@ -480,15 +480,8 @@ private:
 		rltas::InputFrame liveInput = FromControllerInput(*controllerInput);
 		const auto phaseBeforeInput = shot_.GetPhase();
 		const bool isPlaying = phaseBeforeInput == rltas::Phase::Playing;
-		if (pendingSpeedMarker_.exchange(false)) {
-			const float markedSpeed = pendingSpeedValue_.load();
-			if (isPlaying && shot_.SetSpeedMarkerAtPlaybackCursor(markedSpeed)) {
-				SaveCurrentShot();
-			} else if (phaseBeforeInput == rltas::Phase::Playing || phaseBeforeInput == rltas::Phase::Recording) {
-				liveInput.speedChange = true;
-				liveInput.gameSpeed = markedSpeed;
-			}
-		}
+		const bool insertSpeedPoint = pendingSpeedMarker_.exchange(false);
+		const float markedSpeed = pendingSpeedValue_.load();
 		bool breakPlayback = false;
 		if (isPlaying && breakOnInput_.load()) {
 			if (!breakArmed_.load()) {
@@ -499,7 +492,11 @@ private:
 			}
 		}
 
-		const rltas::InputFrame output = shot_.ProcessInput(liveInput, breakPlayback);
+		bool savedSpeedPoint = false;
+		const rltas::InputFrame output = shot_.ProcessInput(
+			liveInput, breakPlayback, insertSpeedPoint, markedSpeed, &savedSpeedPoint);
+		if (savedSpeedPoint)
+			SaveCurrentShot();
 		if (output.grantFlip)
 			GrantFlip(car);
 		if (output.speedChange) {

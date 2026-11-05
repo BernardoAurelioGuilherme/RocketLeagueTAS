@@ -89,20 +89,41 @@ public:
 	// Called by the future per-frame input hook. During playback the stored frame
 	// wins; when `breakPlayback` is true, the player's current frame begins a new
 	// candidate segment. When the committed sequence ends, recording continues.
-	InputFrame ProcessInput(const InputFrame& liveInput, bool breakPlayback = false) {
+	InputFrame ProcessInput(const InputFrame& liveInput, bool breakPlayback = false,
+		bool insertSpeedPoint = false, float speedPoint = 1.0f,
+		bool* savedSpeedPoint = nullptr) {
 		std::lock_guard<std::mutex> lock(mutex_);
+		if (savedSpeedPoint)
+			*savedSpeedPoint = false;
 		if (phase_ == Phase::Playing) {
 			if (breakPlayback || cursor_ >= frames_.size()) {
 				phase_ = Phase::Recording;
-				candidate_.push_back(liveInput);
-				return liveInput;
+				InputFrame recorded = liveInput;
+				if (insertSpeedPoint) {
+					recorded.speedChange = true;
+					recorded.gameSpeed = speedPoint;
+				}
+				candidate_.push_back(recorded);
+				return recorded;
 			}
-			return frames_[cursor_++];
+			InputFrame& frame = frames_[cursor_++];
+			if (insertSpeedPoint) {
+				frame.speedChange = true;
+				frame.gameSpeed = speedPoint;
+				if (savedSpeedPoint)
+					*savedSpeedPoint = true;
+			}
+			return frame;
 		}
 
 		if (phase_ == Phase::Recording) {
-			candidate_.push_back(liveInput);
-			return liveInput;
+			InputFrame recorded = liveInput;
+			if (insertSpeedPoint) {
+				recorded.speedChange = true;
+				recorded.gameSpeed = speedPoint;
+			}
+			candidate_.push_back(recorded);
+			return recorded;
 		}
 
 		return liveInput;
@@ -147,15 +168,6 @@ public:
 		cursor_ = 0;
 		phase_ = Phase::Idle;
 	}
-	bool SetSpeedMarkerAtPlaybackCursor(float speed) {
-		std::lock_guard<std::mutex> lock(mutex_);
-		if (phase_ != Phase::Playing || cursor_ >= frames_.size())
-			return false;
-		frames_[cursor_].speedChange = true;
-		frames_[cursor_].gameSpeed = speed;
-		return true;
-	}
-
 private:
 	mutable std::mutex mutex_;
 	ShotMetadata metadata_;
