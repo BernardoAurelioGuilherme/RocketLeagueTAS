@@ -1,91 +1,70 @@
 # RocketLeagueTAS
 
-A BakkesMod plugin project for building Rocket League shots from recorded car
-inputs in Rocket Plugin LAN games.
+**Copyright (c) 2026 BernardoAurelioGuilherme.**
 
-## Current status
+RocketLeagueTAS is a BakkesMod plugin for recording and iterating on Rocket
+League shots in offline and LAN matches hosted with Rocket Plugin. It records
+the local car's controller input and restores the recorded starting car and ball
+state when a shot is replayed.
 
-This is an early project foundation, not a usable TAS yet. It currently contains:
+## Features
 
-- A BakkesMod settings panel for naming a shot and using Play / Record, Stop,
-  Update, and Stop and Update controls.
-- A shot editing state model for replay, candidate recording, Stop, and Update.
-- Console commands: `rltas_new <name>`, `rltas_start`, `rltas_stop`,
-  `rltas_update`, and `rltas_stopandupdate`.
-- Dear ImGui sources from the BakkesMod SDK bundle, matching the SDK's plugin
-  settings interface.
-- A CMake target configured for a Windows x64 MSVC build.
+- Record, play, stop, update, and retry shot attempts from frame zero.
+- Save and select named shots in the plugin menu; shot files use the `.rltas`
+  format.
+- Restore the starting car and ball state for repeatable attempts.
+- Change game speed from 0.10x to 2.00x, including while a shot is playing or
+  recording.
+- Insert game-speed changes into a shot while recording or playing. A queued
+  change is saved at the next input frame and reproduced during playback.
+- Scale local car velocity changes on ball contact from 1.0x to 5.0x, in 0.1x
+  steps.
+- Optionally grant a flip after a dodge ends.
 
-The panel controls a shot state model and hooks `Car_TA.SetVehicleInput` for
-the local car. Play replays committed input frames; once the player returns the
-controller to neutral, any new controller input interrupts playback and starts
-recording. When the saved sequence ends, recording continues automatically.
-Slow motion and saving/loading shot files are not implemented yet. The hook
-parameter layout is based on the official BakkesMod Mechanical Plugin example;
-runtime behavior still needs checking in a Rocket Plugin LAN match.
+The plugin records car inputs only. It does not record or replay other players'
+inputs. These tools are intended for offline and LAN sessions with BakkesMod
+available, not public online matchmaking.
 
-## Shot editing rules
+## Install
 
-1. Create a shot while the game is in the desired starting setup.
-2. Start an attempt. Existing frames replay from the beginning.
-3. A configured input interruption or the end of the saved sequence switches
-   playback to live recording.
-4. Stop stages the candidate segment; Update commits it. Stopping without
-   updating leaves the committed shot unchanged.
-5. Starting another attempt clears the previous uncommitted candidate and
-   begins again from frame zero. Updating after a mid-playback interruption
-   replaces the old suffix with the new candidate segment.
+1. Download `RocketLeagueTAS.dll` from the latest release for Windows x64.
+2. Copy it to the BakkesMod plugins directory, usually
+   `%APPDATA%\\bakkesmod\\bakkesmod\\plugins`.
+3. In Rocket League, open the BakkesMod console and run
+   `plugin load RocketLeagueTAS`, or enable the plugin from BakkesMod's plugin
+   manager.
+4. Open the BakkesMod F2 menu and find the RocketLeagueTAS settings panel.
 
-Only the local player's controller input belongs in the shot sequence. The
-plugin does not rewind the ball or other cars. Slow motion is a separate
-integration concern: the server-side time-scale command in the previous stub
-was removed because it can affect the whole LAN simulation. We need to verify
-how the host and connected clients behave before selecting a slow-motion method.
+## Build
 
-## Build (Windows)
-
-The BakkesMod SDK import library uses Microsoft's C++ ABI, so this plugin must
-be built with MSVC or an MSVC-compatible toolchain. MinGW can compile the source
-but cannot link against `pluginsdk.lib`. From a Visual Studio 2022 x64 developer
-prompt, configure and build from this directory:
+The BakkesMod SDK import library uses Microsoft's C++ ABI, so build with Visual
+Studio 2022 and CMake on Windows:
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
 
-The output should be `build/Release/RocketLeagueTAS.dll`. Copy it to the BakkesMod
-plugins directory and load it from the in-game console with `plugin load
-RocketLeagueTAS`.
+The DLL is written to `build/Release/RocketLeagueTAS.dll`. GitHub Actions also
+builds a Windows x64 DLL for each workflow run; those temporary workflow
+artifacts expire after 14 days.
 
-Linux users can build in a Windows VM or with a configured MSVC-compatible
-environment. The current workspace has MinGW but no MSVC-compatible compiler,
-so it cannot produce a valid BakkesMod DLL here.
+## Shot editing
 
-## GitHub Actions build
+Create a shot in the desired starting setup, then record and refine it with
+Play, Stop, and Update. Each retry begins at the first frame. Stopping stages a
+candidate attempt; Update commits it. A speed change made during a shot is
+queued for the next input frame and stored with that frame.
 
-The workflow at `.github/workflows/build-plugin.yml` builds the DLL on a
-Windows x64 runner whenever code is pushed, and can also be started manually
-from the repository's Actions page. Download the `RocketLeagueTAS-windows-x64`
-artifact from that workflow run. GitHub keeps the artifact for 14 days.
+## Project status
 
-The workflow is ready to run after the project is pushed to its GitHub
-repository. A private repository is a good default while development continues.
+This is an early release. The speed-point change was just corrected to attach
+the selected speed to the next input frame; please verify it in your LAN setup.
+Physics and timing can vary with map, game version, host, and match settings.
 
-## Research notes
+## Copyright and reuse
 
-- The existing TAS Plugin documents the iterative pattern: create a shot from
-  the current setup, start playback, interrupt to record, Stop, Update, and
-  repeat. It also notes that map and car settings can affect reproducibility:
-  [TAS Plugin](https://bakkesplugins.com/plugin/351).
-- The BakkesMod SDK exposes game state queries and input wrappers such as
-  `GameWrapper::IsInGame`, `IsInOnlineGame`, `GetPlayerController`, and
-  `ControllerInput`. The exact hook callback and input override behavior still
-  needs runtime validation:
-  [GameWrapper SDK header](https://github.com/bakkesmodorg/BakkesModSDK/blob/master/include/bakkesmod/wrappers/GameWrapper.h).
-- Rocket Plugin is intended to host and join local games:
-  [Rocket Plugin](https://bakkesplugins.com/plugin/26).
-- Epic's current Code of Conduct says third-party mods may be used with EAC
-  disabled in training, offline, and LAN matches, provided they comply with the
-  applicable terms:
-  [Rocket League Code of Conduct](https://www.rocketleague.com/code-of-conduct?lang=en).
+Copyright (c) 2026 BernardoAurelioGuilherme. All rights reserved. The project
+is publicly viewable only if the repository owner changes its GitHub
+visibility. No open-source license is included, so public visibility alone
+does not grant permission to reuse, modify, or redistribute the code.
