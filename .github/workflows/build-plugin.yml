@@ -26,11 +26,16 @@ jobs:
           if (-not (Test-Path "build/Release/RocketLeagueTAS.dll")) {
             throw "Build did not produce RocketLeagueTAS.dll"
           }
+          if (-not (Test-Path "build/Release/RocketLeagueTASLAN.dll")) {
+            throw "Build did not produce RocketLeagueTASLAN.dll"
+          }
 
       - name: Upload plugin DLL
         uses: actions/upload-artifact@v7
         with:
           name: RocketLeagueTAS-windows-x64
-          path: build/Release/RocketLeagueTAS.dll
+          path: |
+            build/Release/RocketLeagueTAS.dll
+            build/Release/RocketLeagueTASLAN.dll
           if-no-files-found: error
           retention-days: 14

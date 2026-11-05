@@ -2,10 +2,14 @@
 
 **Copyright (c) 2026 BernardoAurelioGuilherme.**
 
-RocketLeagueTAS is a BakkesMod plugin for recording and iterating on Rocket
-League shots in offline and LAN matches hosted with Rocket Plugin. It records
-the local car's controller input and restores the recorded starting car and ball
-state when a shot is replayed.
+RocketLeagueTAS is a BakkesMod plugin bundle for recording Rocket League shots
+and hosting or joining basic LAN matches. The bundle contains two plugin DLLs,
+which appear as separate settings entries in BakkesMod:
+
+- `RocketLeagueTAS.dll` records and replays the local car's controller input,
+  restores the recorded starting car and ball state, and saves named shots.
+- `RocketLeagueTASLAN.dll` hosts or joins a LAN match with basic arena, mode,
+  bot difficulty, player-slot, and direct IP/port settings.
 
 ## Features
 
@@ -20,6 +24,8 @@ state when a shot is replayed.
   shot remembers its starting speed, which is restored on every retry.
 - Scale local car velocity changes on ball contact from 1.0x to 5.0x, in 0.1x
   steps.
+- Host or join a basic LAN match from the separate RocketLeagueTASLAN settings
+  entry. Friends outside your local network can join using the host's VPN IP.
 
 The plugin records car inputs only. It does not record or replay other players'
 inputs. These tools are intended for offline and LAN sessions with BakkesMod
@@ -27,13 +33,13 @@ available, not public online matchmaking.
 
 ## Install
 
-1. Download `RocketLeagueTAS.dll` from the latest release for Windows x64.
-2. Copy it to the BakkesMod plugins directory, usually
+1. Download the Windows x64 plugin ZIP from the latest release.
+2. Copy both `RocketLeagueTAS.dll` and `RocketLeagueTASLAN.dll` to the BakkesMod plugins directory, usually
    `%APPDATA%\\bakkesmod\\bakkesmod\\plugins`.
-3. In Rocket League, open the BakkesMod console and run
-   `plugin load RocketLeagueTAS`, or enable the plugin from BakkesMod's plugin
-   manager.
-4. Open the BakkesMod F2 menu and find the RocketLeagueTAS settings panel.
+3. In Rocket League, open the BakkesMod console and run `plugin load
+   RocketLeagueTAS` and `plugin load RocketLeagueTASLAN`, or enable both from
+   BakkesMod's plugin manager.
+4. Open the BakkesMod F2 menu and select either plugin's settings entry.
 
 ## Build
 
@@ -45,8 +51,9 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
 
-The DLL is written to `build/Release/RocketLeagueTAS.dll`. GitHub Actions also
-builds a Windows x64 DLL for each workflow run; those temporary workflow
+The two DLLs are written to `build/Release/`. The solution file
+`RocketLeagueTAS.sln` builds both plugins in Visual Studio. GitHub Actions also
+builds both Windows x64 DLLs for each workflow run; those temporary workflow
 artifacts expire after 14 days.
 
 ## Shot editing

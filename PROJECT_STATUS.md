@@ -15,6 +15,8 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 - Each shot stores its starting game speed and restores it at the beginning of every retry, so speed points are replayed from a known baseline.
 - Ball hit speed multiplier slider from 1.0x to 5.0x in 0.1 increments. It scales the local car's velocity change to the ball on contact and raises the ball max linear speed to match.
 - `.rltas` format version 5 stores the shot starting speed and speed markers. Versions 1–4 remain loadable; legacy flip-reset markers are ignored.
+- The project now builds two separate BakkesMod entries: `RocketLeagueTAS` for shot TAS controls and `RocketLeagueTASLAN` for basic match hosting/joining.
+- The initial LAN panel supports standard arenas, Soccar/Hoops/Snow Day/Rumble/Dropshot, bot difficulty tags, player slots, and direct IP/port joining. VPN setup is external; friends should enter the host's VPN address.
 - Other future functions are not implemented yet.
 
 ## Latest build

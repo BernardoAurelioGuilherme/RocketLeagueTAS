@@ -11,29 +11,32 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(BAKKESMOD_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/bakkesmod")
 
-add_library(RocketLeagueTAS SHARED
-	src/main.cpp
+set(PLUGIN_IMGUI_SOURCES
 	include/imgui/imgui.cpp
 	include/imgui/imgui_draw.cpp
 	include/imgui/imgui_widgets.cpp
 )
 
-target_include_directories(RocketLeagueTAS PRIVATE
-	"${CMAKE_CURRENT_SOURCE_DIR}/src"
-	"${CMAKE_CURRENT_SOURCE_DIR}/include/imgui"
-	"${BAKKESMOD_SDK_DIR}/include"
-	"${BAKKESMOD_SDK_DIR}/include/bakkesmod"
-	"${BAKKESMOD_SDK_DIR}/include/bakkesmod/wrappers"
-	"${BAKKESMOD_SDK_DIR}/include/bakkesmod/wrappers/items"
-	"${BAKKESMOD_SDK_DIR}/include/bakkesmod/wrappers/items/dbs"
-)
+function(add_rltas_plugin target source)
+	add_library(${target} SHARED ${source} ${PLUGIN_IMGUI_SOURCES})
+	target_include_directories(${target} PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/src"
+		"${CMAKE_CURRENT_SOURCE_DIR}/include/imgui"
+		"${BAKKESMOD_SDK_DIR}/include"
+		"${BAKKESMOD_SDK_DIR}/include/bakkesmod"
+		"${BAKKESMOD_SDK_DIR}/include/bakkesmod/wrappers"
+		"${BAKKESMOD_SDK_DIR}/include/bakkesmod/wrappers/items"
+		"${BAKKESMOD_SDK_DIR}/include/bakkesmod/wrappers/items/dbs"
+	)
+	target_link_libraries(${target} PRIVATE
+		"${BAKKESMOD_SDK_DIR}/lib/pluginsdk.lib"
+	)
+	set_target_properties(${target} PROPERTIES
+		PREFIX ""
+		OUTPUT_NAME "${target}"
+	)
+endfunction()
 
-target_link_libraries(RocketLeagueTAS PRIVATE
-	"${BAKKESMOD_SDK_DIR}/lib/pluginsdk.lib"
-)
-
-set_target_properties(RocketLeagueTAS PROPERTIES
-	PREFIX ""
-	OUTPUT_NAME "RocketLeagueTAS"
-)
+add_rltas_plugin(RocketLeagueTAS src/main.cpp)
+add_rltas_plugin(RocketLeagueTASLAN src/lan_main.cpp)
 
