@@ -3,13 +3,18 @@
 **Copyright (c) 2026 BernardoAurelioGuilherme.**
 
 RocketLeagueTAS is a BakkesMod plugin bundle for recording Rocket League shots
-and hosting or joining basic LAN matches. The bundle contains two plugin DLLs,
-which appear as separate settings entries in BakkesMod:
+and playing them back in offline or LAN matches. The project is adding LAN
+hosting and joining directly to its own companion plugin, so the goal is to
+use these LAN controls without needing the separate Rocket Plugin. The bundle
+contains two plugin DLLs, which appear as separate settings entries in
+BakkesMod:
 
 - `RocketLeagueTAS.dll` records and replays the local car's controller input,
   restores the recorded starting car and ball state, and saves named shots.
-- `RocketLeagueTASLAN.dll` hosts or joins a LAN match with basic arena, mode,
-  bot difficulty, player-slot, and direct IP/port settings.
+- `RocketLeagueTASLAN.dll` provides the in-progress built-in LAN host/join
+  controls, including arena, mode, bot difficulty, player slots, and direct
+  IP/port settings. This is an early implementation and still needs in-game
+  testing; Rocket Plugin is not intended to be a dependency.
 
 ## Features
 
@@ -25,7 +30,8 @@ which appear as separate settings entries in BakkesMod:
 - Scale local car velocity changes on ball contact from 1.0x to 5.0x, in 0.1x
   steps.
 - Host or join a basic LAN match from the separate RocketLeagueTASLAN settings
-  entry. Friends outside your local network can join using the host's VPN IP.
+  entry. Friends outside your local network can join using the host's VPN IP;
+  VPN setup remains external to the plugin.
 
 The plugin records car inputs only. It does not record or replay other players'
 inputs. These tools are intended for offline and LAN sessions with BakkesMod
@@ -65,13 +71,15 @@ queued for the next input frame and stored with that frame.
 
 ## Project status
 
-This is an early release. The speed-point change was just corrected to attach
-the selected speed to the next input frame; please verify it in your LAN setup.
-Physics and timing can vary with map, game version, host, and match settings.
+This is an early release. The built-in LAN host/join panel is being brought into
+the plugin bundle to avoid requiring Rocket Plugin, and its host settings,
+selected arena/mode, bot spawning, and joining still need in-game validation.
+The speed-point change was also just corrected to attach the selected speed to
+the next input frame; please verify it in your LAN setup. Physics and timing
+can vary with map, game version, host, and match settings.
 
 ## Copyright and reuse
 
-Copyright (c) 2026 BernardoAurelioGuilherme. All rights reserved. The project
-is publicly viewable only if the repository owner changes its GitHub
-visibility. No open-source license is included, so public visibility alone
-does not grant permission to reuse, modify, or redistribute the code.
+Copyright (c) 2026 BernardoAurelioGuilherme. All rights reserved. No
+open-source license is included, so public visibility alone does not grant
+permission to reuse, modify, or redistribute the code.

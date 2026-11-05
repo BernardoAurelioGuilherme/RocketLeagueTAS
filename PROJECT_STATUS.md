@@ -1,6 +1,6 @@
 # Project status
 
-RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS shots in Rocket Plugin LAN matches. The intended scope is local car input playback plus restoring the local car and ball to the shot's initial physics state. It is for offline/LAN use, not competitive online play.
+RocketLeagueTAS is a two-plugin BakkesMod bundle for building and replaying car-input TAS shots, plus hosting or joining basic LAN matches. `RocketLeagueTASLAN` is designed to provide the basic LAN controls directly, without requiring Rocket Plugin. The intended scope is offline/LAN use, not competitive online play.
 
 ## Current implementation
 
@@ -21,23 +21,26 @@ RocketLeagueTAS is a BakkesMod plugin for building and replaying car-input TAS s
 
 ## Latest build
 
-- Latest source commit: `d51cf93` (`Remove automatic flip reset feature`).
-- Windows GitHub Actions run `41944315189` succeeded.
-- The latest DLL is installed in the user's BakkesMod plugin folder; reload the plugin or restart Rocket League to use it.
+- Latest source commit: `17e3176` (`Add companion LAN host plugin`).
+- Windows GitHub Actions run `41955844244` succeeded and produced both DLLs.
+- Both DLLs are installed in the user's BakkesMod plugin folder; reload them or restart Rocket League to use them.
+- The LAN host/join commands are a first implementation and still need in-game validation, including arena/mode selection and bot spawning.
 - Ball hit velocity scaling is applied 0.01 seconds after the hit callback so the normal collision physics can settle first. The ball multiplier is built and installed; retest to confirm the ball no longer feels heavy.
 
 ## Next test steps
 
-1. Reload RocketLeagueTAS in BakkesMod.
-2. In a LAN match, put the car and ball at the intended start and click New Shot.
-3. Record a segment, stop it, then use Stop and Update to commit and save.
-4. Move the car and ball, select the shot from Saved TAS, click Load TAS, then Play / Record.
-5. Check whether the car and ball return to their recorded states and whether playback behaves as expected in the LAN match.
-6. Change Game speed and verify it applies even while no TAS attempt is active.
-7. Set Ball hit speed multiplier to 1.2x, hit a still ball with a repeatable touch, and compare its outgoing speed with 1.0x. Then try 5.0x and confirm the ball remains controllable.
-8. During recording or playback, change Game speed; verify the speed-point counter increments and the change repeats on playback.
-9. Report any issues before adding other features.
+1. Reload both `RocketLeagueTAS` and `RocketLeagueTASLAN` in BakkesMod, or restart Rocket League.
+2. Open the `RocketLeagueTASLAN` panel and check the host arena, mode, bot difficulty, player slots, and join address/port controls.
+3. Host a match and verify the selected arena/mode and bot count. From another machine, try joining with the host's VPN IP and port 7777.
+4. In a LAN match, put the car and ball at the intended start and click New Shot.
+5. Record a segment, stop it, then use Stop and Update to commit and save.
+6. Move the car and ball, select the shot from Saved TAS, click Load TAS, then Play / Record.
+7. Check whether the car and ball return to their recorded states and whether playback behaves as expected in the LAN match.
+8. Change Game speed and verify it applies even while no TAS attempt is active.
+9. Set Ball hit speed multiplier to 1.2x, hit a still ball with a repeatable touch, and compare its outgoing speed with 1.0x. Then try 5.0x and confirm the ball remains controllable.
+10. During recording or playback, change Game speed; verify the speed-point counter increments and the change repeats on playback.
+11. Report any issues before adding other features.
 
 ## Repository
 
-Private GitHub repository: `BernardoAurelioGuilherme/RocketLeagueTAS`.
+GitHub repository: `BernardoAurelioGuilherme/RocketLeagueTAS`.
